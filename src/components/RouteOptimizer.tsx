@@ -13,46 +13,11 @@ interface Customer {
   lng: number;
 }
 
-const mockCustomers: Customer[] = [
-  {
-    id: '1',
-    name: 'Johnson Family',
-    address: '123 Oak Street',
-    status: 'completed',
-    estimatedTime: 45,
-    lat: 40.7128,
-    lng: -74.0060
-  },
-  {
-    id: '2',
-    name: 'Smith Residence',
-    address: '456 Maple Avenue',
-    status: 'in-progress',
-    estimatedTime: 60,
-    lat: 40.7589,
-    lng: -73.9851
-  },
-  {
-    id: '3',
-    name: 'Brown Property',
-    address: '789 Pine Road',
-    status: 'pending',
-    estimatedTime: 30,
-    lat: 40.7831,
-    lng: -73.9712
-  },
-  {
-    id: '4',
-    name: 'Davis Lawn Care',
-    address: '321 Elm Drive',
-    status: 'pending',
-    estimatedTime: 90,
-    lat: 40.7282,
-    lng: -73.7949
-  }
-];
+interface RouteOptimizerProps {
+  customers: Customer[];
+}
 
-const RouteOptimizer = () => {
+const RouteOptimizer = ({ customers }: RouteOptimizerProps) => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'completed':
@@ -64,8 +29,8 @@ const RouteOptimizer = () => {
     }
   };
 
-  const totalTime = mockCustomers.reduce((acc, customer) => acc + customer.estimatedTime, 0);
-  const completedJobs = mockCustomers.filter(c => c.status === 'completed').length;
+  const totalTime = customers.reduce((acc, customer) => acc + customer.estimatedTime, 0);
+  const completedJobs = customers.filter(c => c.status === 'completed').length;
 
   return (
     <div className="space-y-6">
@@ -77,7 +42,7 @@ const RouteOptimizer = () => {
               <Route className="h-5 w-5 text-primary" />
               <div>
                 <p className="text-sm text-muted-foreground">Total Stops</p>
-                <p className="text-2xl font-bold text-foreground">{mockCustomers.length}</p>
+                <p className="text-2xl font-bold text-foreground">{customers.length}</p>
               </div>
             </div>
           </CardContent>
@@ -101,7 +66,7 @@ const RouteOptimizer = () => {
               <CheckCircle2 className="h-5 w-5 text-success" />
               <div>
                 <p className="text-sm text-muted-foreground">Completed</p>
-                <p className="text-2xl font-bold text-foreground">{completedJobs}/{mockCustomers.length}</p>
+                <p className="text-2xl font-bold text-foreground">{completedJobs}/{customers.length}</p>
               </div>
             </div>
           </CardContent>
@@ -138,7 +103,12 @@ const RouteOptimizer = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {mockCustomers.map((customer, index) => (
+            {customers.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>No clients imported yet. Use the import tool above to add your client list.</p>
+              </div>
+            ) : (
+              customers.map((customer, index) => (
               <div 
                 key={customer.id} 
                 className="flex items-center justify-between p-4 rounded-lg border bg-gradient-to-r from-card to-muted/10 hover:shadow-[var(--shadow-soft)] transition-[var(--transition-smooth)]"
@@ -168,7 +138,8 @@ const RouteOptimizer = () => {
                   </Badge>
                 </div>
               </div>
-            ))}
+              ))
+            )}
           </div>
         </CardContent>
       </Card>
@@ -177,3 +148,4 @@ const RouteOptimizer = () => {
 };
 
 export default RouteOptimizer;
+export type { Customer };
