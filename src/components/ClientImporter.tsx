@@ -139,7 +139,7 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
   };
 
   return (
-    <Card className="shadow-[var(--shadow-medium)]">
+    <Card className="shadow-[var(--shadow-medium)] bg-card border-border">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Upload className="h-5 w-5 text-primary" />
