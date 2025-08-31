@@ -30,6 +30,7 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const markers = useRef<mapboxgl.Marker[]>([]);
+  const mapLoaded = useRef(false);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -61,6 +62,11 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
       'top-right'
     );
 
+    // Wait for map to load before allowing marker/source operations
+    map.current.on('load', () => {
+      mapLoaded.current = true;
+    });
+
     return () => {
       // Clear existing markers
       markers.current.forEach(marker => marker.remove());
@@ -70,7 +76,7 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
   }, []);
 
   useEffect(() => {
-    if (!map.current || customers.length === 0) return;
+    if (!map.current || !mapLoaded.current) return;
 
     // Clear existing markers
     markers.current.forEach(marker => marker.remove());
@@ -183,45 +189,49 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
         coordinates = [[homeBase.lng, homeBase.lat], ...coordinates, [homeBase.lng, homeBase.lat]];
       }
       
-      if (map.current.getSource('route')) {
-        (map.current.getSource('route') as mapboxgl.GeoJSONSource).setData({
-          type: 'Feature',
-          properties: {},
-          geometry: {
-            type: 'LineString',
-            coordinates: coordinates
-          }
-        });
-      } else {
-        map.current.addSource('route', {
-          type: 'geojson',
-          data: {
+      // Only add source if map style is loaded
+      if (mapLoaded.current) {
+      
+        if (map.current.getSource('route')) {
+          (map.current.getSource('route') as mapboxgl.GeoJSONSource).setData({
             type: 'Feature',
             properties: {},
             geometry: {
               type: 'LineString',
               coordinates: coordinates
             }
-          }
-        });
+          });
+        } else {
+          map.current.addSource('route', {
+            type: 'geojson',
+            data: {
+              type: 'Feature',
+              properties: {},
+              geometry: {
+                type: 'LineString',
+                coordinates: coordinates
+              }
+            }
+          });
 
-        map.current.addLayer({
-          id: 'route',
-          type: 'line',
-          source: 'route',
-          layout: {
-            'line-join': 'round',
-            'line-cap': 'round'
-          },
-          paint: {
-            'line-color': '#3b82f6',
-            'line-width': 3,
-            'line-opacity': 0.7
-          }
-        });
+          map.current.addLayer({
+            id: 'route',
+            type: 'line',
+            source: 'route',
+            layout: {
+              'line-join': 'round',
+              'line-cap': 'round'
+            },
+            paint: {
+              'line-color': '#3b82f6',
+              'line-width': 3,
+              'line-opacity': 0.7
+            }
+          });
+        }
       }
     }
-  }, [customers, homeBase]);
+  }, [customers, homeBase, mapLoaded.current]);
 
   return (
     <Card className="h-full shadow-[var(--shadow-medium)]">
