@@ -182,19 +182,20 @@ const MapView = ({ customers }: MapViewProps) => {
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0">
-        <div 
-          ref={mapContainer} 
-          className="w-full h-[500px] rounded-b-lg"
-          style={{ minHeight: '400px' }}
-        />
-        {customers.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center bg-card/95 rounded-b-lg">
-            <div className="text-center space-y-2">
-              <Map className="h-8 w-8 text-muted-foreground mx-auto" />
-              <p className="text-muted-foreground">Import clients to see route map</p>
+        <div className="relative w-full h-[500px] rounded-b-lg" style={{ minHeight: '400px' }}>
+          <div 
+            ref={mapContainer} 
+            className="absolute inset-0 rounded-b-lg"
+          />
+          {customers.length === 0 && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-card/95 rounded-b-lg">
+              <div className="text-center space-y-2">
+                <Map className="h-8 w-8 text-muted-foreground mx-auto" />
+                <p className="text-muted-foreground">Import clients to see route map</p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </CardContent>
     </Card>
   );
