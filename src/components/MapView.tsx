@@ -46,26 +46,39 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
   useEffect(() => {
     if (!mapContainer.current) return;
 
+    console.log("Initializing Mapbox map...");
+    
     // Initialize map centered on Springfield, MO
     mapboxgl.accessToken = 'pk.eyJ1IjoibG92YWJsZS1haSIsImEiOiJjbTVjaHo4NGgxMGU3MmxyeTU1a3BtZzBhIn0.WR6nLdQzBMgdYr5YG4wbCw';
     
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/light-v11',
-      center: [-93.2923, 37.2153], // Springfield, MO
-      zoom: 11,
-    });
+    try {
+      map.current = new mapboxgl.Map({
+        container: mapContainer.current,
+        style: 'mapbox://styles/mapbox/light-v11',
+        center: [-93.2923, 37.2153], // Springfield, MO
+        zoom: 11,
+      });
 
-    // Add navigation controls
-    map.current.addControl(
-      new mapboxgl.NavigationControl(),
-      'top-right'
-    );
+      console.log("Map created successfully");
 
-    // Wait for map to load before allowing marker/source operations
-    map.current.on('load', () => {
-      mapLoaded.current = true;
-    });
+      // Add navigation controls
+      map.current.addControl(
+        new mapboxgl.NavigationControl(),
+        'top-right'
+      );
+
+      // Wait for map to load before allowing marker/source operations
+      map.current.on('load', () => {
+        console.log("Map loaded successfully");
+        mapLoaded.current = true;
+      });
+
+      map.current.on('error', (e) => {
+        console.error("Mapbox error:", e);
+      });
+    } catch (error) {
+      console.error("Error creating map:", error);
+    }
 
     return () => {
       // Clear existing markers
@@ -76,7 +89,19 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
   }, []);
 
   useEffect(() => {
-    if (!map.current || !mapLoaded.current) return;
+    console.log("Customer effect triggered:", { 
+      hasMap: !!map.current, 
+      mapLoaded: mapLoaded.current, 
+      customerCount: customers.length,
+      hasHomeBase: !!homeBase 
+    });
+    
+    if (!map.current || !mapLoaded.current) {
+      console.log("Map not ready yet, skipping marker update");
+      return;
+    }
+
+    console.log("Adding markers for", customers.length, "customers");
 
     // Clear existing markers
     markers.current.forEach(marker => marker.remove());
@@ -247,16 +272,25 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="relative w-full h-[500px] rounded-b-lg" style={{ minHeight: '400px' }}>
+        <div className="relative w-full h-[500px] rounded-b-lg bg-muted/10" style={{ minHeight: '400px' }}>
           <div 
             ref={mapContainer} 
             className="absolute inset-0 rounded-b-lg"
+            style={{ background: '#f0f0f0' }}
           />
-          {customers.length === 0 && (
+          {(!mapLoaded.current && customers.length === 0) && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-card/95 rounded-b-lg">
               <div className="text-center space-y-2">
                 <Map className="h-8 w-8 text-muted-foreground mx-auto" />
                 <p className="text-muted-foreground">Import clients to see route map</p>
+              </div>
+            </div>
+          )}
+          {(!mapLoaded.current && customers.length > 0) && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-card/95 rounded-b-lg">
+              <div className="text-center space-y-2">
+                <Map className="h-8 w-8 text-primary mx-auto animate-pulse" />
+                <p className="text-muted-foreground">Loading map...</p>
               </div>
             </div>
           )}

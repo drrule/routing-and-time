@@ -66,7 +66,7 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
           address: fullAddress || 'Address not provided',
           status: 'pending',
           estimatedTime: estimatedTime,
-          lat: 40.7128 + (Math.random() - 0.5) * 0.1, // Random coords near Springfield, MO area
+          lat: 37.2153 + (Math.random() - 0.5) * 0.1, // Random coords near Springfield, MO area
           lng: -93.2923 + (Math.random() - 0.5) * 0.1  // Springfield, MO coordinates
         };
         console.log("Created customer:", customer);
