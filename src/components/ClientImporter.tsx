@@ -204,7 +204,7 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
 
         <Button 
           onClick={handleImport}
-          className="w-full bg-[var(--gradient-primary)] hover:opacity-90 transition-[var(--transition-smooth)]"
+          className="w-full"
           disabled={!rawData.trim() || isLoading}
         >
           <Upload className="h-4 w-4 mr-2" />
