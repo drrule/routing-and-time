@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Upload, FileText, AlertCircle, File } from "lucide-react";
+import { Upload, FileText, AlertCircle, File, CheckCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface Customer {
@@ -25,14 +25,20 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
   const [rawData, setRawData] = useState("");
   const [error, setError] = useState("");
   const [fileName, setFileName] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const parseClientData = (data: string): Customer[] => {
+    console.log("Raw data received:", data);
     const lines = data.trim().split('\n').filter(line => line.trim());
+    console.log("Lines after splitting:", lines);
     const customers: Customer[] = [];
 
     lines.forEach((line, index) => {
+      console.log(`Processing line ${index + 1}:`, line);
       const parts = line.split(',').map(part => part.trim());
+      console.log("Parts after splitting:", parts);
       
       if (parts.length >= 2) {
         const customer: Customer = {
@@ -44,10 +50,14 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
           lat: parts[3] ? parseFloat(parts[3]) || 40.7128 : 40.7128 + (Math.random() - 0.5) * 0.1,
           lng: parts[4] ? parseFloat(parts[4]) || -74.0060 : -74.0060 + (Math.random() - 0.5) * 0.1
         };
+        console.log("Created customer:", customer);
         customers.push(customer);
+      } else {
+        console.log(`Skipping line ${index + 1} - not enough parts:`, parts);
       }
     });
 
+    console.log("Final customers array:", customers);
     return customers;
   };
 
@@ -71,28 +81,41 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
 
   const handleImport = () => {
     try {
+      setIsLoading(true);
       setError("");
+      setSuccessMessage("");
       
       if (!rawData.trim()) {
         setError("Please enter client data to import");
+        setIsLoading(false);
         return;
       }
 
+      console.log("Starting import process...");
       const customers = parseClientData(rawData);
       
       if (customers.length === 0) {
         setError("No valid client data found. Please check your format.");
+        setIsLoading(false);
         return;
       }
 
+      console.log(`Importing ${customers.length} customers...`);
       onImport(customers);
+      setSuccessMessage(`Successfully imported ${customers.length} clients!`);
       setRawData("");
       setFileName("");
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => setSuccessMessage(""), 3000);
     } catch (err) {
+      console.error("Import error:", err);
       setError("Error parsing client data. Please check your format.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -157,6 +180,13 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
           </Alert>
         )}
 
+        {successMessage && (
+          <Alert className="border-success bg-success/10 text-success">
+            <CheckCircle className="h-4 w-4" />
+            <AlertDescription>{successMessage}</AlertDescription>
+          </Alert>
+        )}
+
         <div className="bg-muted/30 p-3 rounded-md">
           <div className="flex items-start gap-2">
             <FileText className="h-4 w-4 text-muted-foreground mt-0.5" />
@@ -175,10 +205,10 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
         <Button 
           onClick={handleImport}
           className="w-full bg-[var(--gradient-primary)] hover:opacity-90 transition-[var(--transition-smooth)]"
-          disabled={!rawData.trim()}
+          disabled={!rawData.trim() || isLoading}
         >
           <Upload className="h-4 w-4 mr-2" />
-          Import Clients
+          {isLoading ? "Importing..." : "Import Clients"}
         </Button>
       </CardContent>
     </Card>
