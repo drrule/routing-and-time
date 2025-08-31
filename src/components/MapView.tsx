@@ -14,11 +14,19 @@ interface Customer {
   lng: number;
 }
 
-interface MapViewProps {
-  customers: Customer[];
+interface HomeBase {
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
 }
 
-const MapView = ({ customers }: MapViewProps) => {
+interface MapViewProps {
+  customers: Customer[];
+  homeBase: HomeBase | null;
+}
+
+const MapView = ({ customers, homeBase }: MapViewProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const markers = useRef<mapboxgl.Marker[]>([]);
@@ -68,6 +76,45 @@ const MapView = ({ customers }: MapViewProps) => {
     markers.current.forEach(marker => marker.remove());
     markers.current = [];
 
+    // Add home base marker if set
+    if (homeBase) {
+      const homeMarkerEl = document.createElement('div');
+      homeMarkerEl.className = 'home-marker';
+      homeMarkerEl.style.cssText = `
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background-color: #dc2626;
+        border: 3px solid white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+        font-size: 16px;
+        cursor: pointer;
+      `;
+      homeMarkerEl.innerHTML = '🏠';
+
+      const homePopup = new mapboxgl.Popup({ offset: 25 }).setHTML(`
+        <div style="padding: 8px;">
+          <h3 style="margin: 0 0 4px 0; font-weight: bold; color: #dc2626;">🏠 ${homeBase.name}</h3>
+          <p style="margin: 0 0 4px 0; color: #666; font-size: 14px;">${homeBase.address}</p>
+          <p style="margin: 0; font-size: 12px; color: #dc2626; font-weight: bold;">
+            HOME BASE - Route Start/End Point
+          </p>
+        </div>
+      `);
+
+      const homeMarker = new mapboxgl.Marker(homeMarkerEl)
+        .setLngLat([homeBase.lng, homeBase.lat])
+        .setPopup(homePopup)
+        .addTo(map.current!);
+
+      markers.current.push(homeMarker);
+    }
+
     // Add markers for each customer
     customers.forEach((customer, index) => {
       // Create custom marker element
@@ -113,20 +160,28 @@ const MapView = ({ customers }: MapViewProps) => {
     });
 
     // Fit map to show all markers with padding
-    if (customers.length > 1) {
+    const allPoints = [...customers];
+    if (homeBase) allPoints.unshift(homeBase as any);
+    
+    if (allPoints.length > 1) {
       const bounds = new mapboxgl.LngLatBounds();
-      customers.forEach(customer => {
-        bounds.extend([customer.lng, customer.lat]);
+      allPoints.forEach(point => {
+        bounds.extend([point.lng, point.lat]);
       });
-      map.current.fitBounds(bounds, { padding: 50 });
-    } else if (customers.length === 1) {
-      map.current.setCenter([customers[0].lng, customers[0].lat]);
+      map.current.fitBounds(bounds, { padding: 60 });
+    } else if (allPoints.length === 1) {
+      map.current.setCenter([allPoints[0].lng, allPoints[0].lat]);
       map.current.setZoom(14);
     }
 
-    // Add route line connecting all stops
-    if (customers.length > 1) {
-      const coordinates = customers.map(customer => [customer.lng, customer.lat]);
+    // Add route line connecting home base to all stops and back
+    if (customers.length > 0) {
+      let coordinates = customers.map(customer => [customer.lng, customer.lat]);
+      
+      // Add home base at start and end if set
+      if (homeBase) {
+        coordinates = [[homeBase.lng, homeBase.lat], ...coordinates, [homeBase.lng, homeBase.lat]];
+      }
       
       if (map.current.getSource('route')) {
         (map.current.getSource('route') as mapboxgl.GeoJSONSource).setData({
@@ -166,7 +221,7 @@ const MapView = ({ customers }: MapViewProps) => {
         });
       }
     }
-  }, [customers]);
+  }, [customers, homeBase]);
 
   return (
     <Card className="h-full shadow-[var(--shadow-medium)]">

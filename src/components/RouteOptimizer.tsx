@@ -13,11 +13,19 @@ interface Customer {
   lng: number;
 }
 
-interface RouteOptimizerProps {
-  customers: Customer[];
+interface HomeBase {
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
 }
 
-const RouteOptimizer = ({ customers }: RouteOptimizerProps) => {
+interface RouteOptimizerProps {
+  customers: Customer[];
+  homeBase: HomeBase | null;
+}
+
+const RouteOptimizer = ({ customers, homeBase }: RouteOptimizerProps) => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'completed':
