@@ -37,18 +37,37 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
 
     lines.forEach((line, index) => {
       console.log(`Processing line ${index + 1}:`, line);
-      const parts = line.split(',').map(part => part.trim());
+      
+      // Detect separator - check if line contains tabs first, then fall back to commas
+      const separator = line.includes('\t') ? '\t' : ',';
+      const parts = line.split(separator).map(part => part.trim());
       console.log("Parts after splitting:", parts);
       
       if (parts.length >= 2) {
+        // Handle your specific format: Name, Type, Price, Letter, Address, City, State
+        const name = parts[0] || `Customer ${index + 1}`;
+        const businessType = parts[1] || '';
+        const price = parts[2] || '';
+        const frequency = parts[3] || '';
+        const address = parts[4] || '';
+        const city = parts[5] || '';
+        const state = parts[6] || '';
+        
+        // Combine address components
+        const fullAddress = [address, city, state].filter(Boolean).join(', ');
+        
+        // Extract time estimate from price (default 45 min, or estimate based on price)
+        const priceNum = parseFloat(price.replace(/[$,]/g, '')) || 45;
+        const estimatedTime = Math.max(30, Math.min(120, priceNum)); // 30-120 min based on price
+        
         const customer: Customer = {
           id: `imported-${index + 1}`,
-          name: parts[0] || `Customer ${index + 1}`,
-          address: parts[1] || 'Address not provided',
+          name: `${name}${businessType && businessType !== 'Residential' ? ` (${businessType})` : ''}`,
+          address: fullAddress || 'Address not provided',
           status: 'pending',
-          estimatedTime: parts[2] ? parseInt(parts[2]) || 45 : 45,
-          lat: parts[3] ? parseFloat(parts[3]) || 40.7128 : 40.7128 + (Math.random() - 0.5) * 0.1,
-          lng: parts[4] ? parseFloat(parts[4]) || -74.0060 : -74.0060 + (Math.random() - 0.5) * 0.1
+          estimatedTime: estimatedTime,
+          lat: 40.7128 + (Math.random() - 0.5) * 0.1, // Random coords near Springfield, MO area
+          lng: -93.2923 + (Math.random() - 0.5) * 0.1  // Springfield, MO coordinates
         };
         console.log("Created customer:", customer);
         customers.push(customer);
@@ -166,7 +185,7 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
           <Label htmlFor="client-data">Paste your client data</Label>
           <Textarea
             id="client-data"
-            placeholder="Paste your client list here. Format: Name, Address, Time (optional), Lat (optional), Lng (optional)&#10;&#10;Example:&#10;Johnson Family, 123 Oak Street, 45&#10;Smith Residence, 456 Maple Avenue, 60&#10;Brown Property, 789 Pine Road, 30"
+            placeholder="Paste your client list here. Supports both comma-separated (CSV) and tab-separated (from spreadsheets) formats.&#10;&#10;Your format will work perfectly - just paste directly from Google Sheets!&#10;&#10;Example formats:&#10;• From spreadsheets: Name[TAB]Type[TAB]Price[TAB]Frequency[TAB]Address[TAB]City[TAB]State&#10;• CSV: Name, Address, Time, Lat, Lng"
             value={rawData}
             onChange={(e) => setRawData(e.target.value)}
             className="min-h-[120px] font-mono text-sm"
@@ -193,10 +212,11 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
             <div className="text-sm text-muted-foreground">
               <p className="font-medium mb-1">Supported formats:</p>
               <ul className="text-xs space-y-1">
-                <li>• CSV format: Name, Address, Time, Latitude, Longitude</li>
-                <li>• Minimum required: Name, Address</li>
-                <li>• Time in minutes (default: 45 min if not provided)</li>
-                <li>• Coordinates optional (random nearby if not provided)</li>
+                <li>• <strong>Spreadsheet paste:</strong> Copy directly from Google Sheets, Excel</li>
+                <li>• <strong>CSV format:</strong> Name, Address, Time, Latitude, Longitude</li>
+                <li>• <strong>Your format:</strong> Name, Type, Price, Frequency, Address, City, State</li>
+                <li>• Time is estimated from price ($45 = ~45 min service)</li>
+                <li>• Coordinates auto-generated for Springfield, MO area</li>
               </ul>
             </div>
           </div>
