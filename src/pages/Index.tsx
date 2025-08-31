@@ -20,7 +20,7 @@ const Index = () => {
           
           {/* Map View */}
           <div>
-            <MapView />
+            <MapView customers={customers} />
           </div>
         </div>
       </main>
