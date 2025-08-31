@@ -185,10 +185,10 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
           <Label htmlFor="client-data">Paste your client data</Label>
           <Textarea
             id="client-data"
-            placeholder="Paste your client list here. Supports both comma-separated (CSV) and tab-separated (from spreadsheets) formats.&#10;&#10;Your format will work perfectly - just paste directly from Google Sheets!&#10;&#10;Example formats:&#10;• From spreadsheets: Name[TAB]Type[TAB]Price[TAB]Frequency[TAB]Address[TAB]City[TAB]State&#10;• CSV: Name, Address, Time, Lat, Lng"
+            placeholder="Paste your client data here...&#10;&#10;Example: Anna Boyce, Residential, $55, B, 4399 S Farm Rd 125, Springfield, MO"
             value={rawData}
             onChange={(e) => setRawData(e.target.value)}
-            className="min-h-[120px] font-mono text-sm"
+            className="min-h-[100px] font-mono text-sm resize-none"
           />
         </div>
 
@@ -206,18 +206,19 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
           </Alert>
         )}
 
-        <div className="bg-muted/30 p-3 rounded-md">
-          <div className="flex items-start gap-2">
-            <FileText className="h-4 w-4 text-muted-foreground mt-0.5" />
-            <div className="text-sm text-muted-foreground">
-              <p className="font-medium mb-1">Supported formats:</p>
-              <ul className="text-xs space-y-1">
-                <li>• <strong>Spreadsheet paste:</strong> Copy directly from Google Sheets, Excel</li>
-                <li>• <strong>CSV format:</strong> Name, Address, Time, Latitude, Longitude</li>
-                <li>• <strong>Your format:</strong> Name, Type, Price, Frequency, Address, City, State</li>
-                <li>• Time is estimated from price ($45 = ~45 min service)</li>
-                <li>• Coordinates auto-generated for Springfield, MO area</li>
-              </ul>
+        <div className="bg-muted/20 p-4 rounded-md border">
+          <div className="flex items-start gap-3">
+            <FileText className="h-5 w-5 text-muted-foreground mt-0.5 flex-shrink-0" />
+            <div className="text-sm text-muted-foreground space-y-2">
+              <p className="font-medium text-foreground">Supported formats:</p>
+              <div className="space-y-1">
+                <p><strong>📋 Spreadsheet paste:</strong> Copy directly from Google Sheets or Excel</p>
+                <p><strong>📄 CSV format:</strong> Name, Address, Time, Latitude, Longitude</p>
+                <p><strong>🏠 Your format:</strong> Name, Type, Price, Frequency, Address, City, State</p>
+              </div>
+              <p className="text-xs pt-2 border-t border-muted">
+                💡 Service time estimated from price • Coordinates auto-generated for Springfield, MO area
+              </p>
             </div>
           </div>
         </div>
