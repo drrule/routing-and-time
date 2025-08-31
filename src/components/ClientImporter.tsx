@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Upload, FileText, AlertCircle } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Upload, FileText, AlertCircle, File } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface Customer {
@@ -23,6 +24,8 @@ interface ClientImporterProps {
 const ClientImporter = ({ onImport }: ClientImporterProps) => {
   const [rawData, setRawData] = useState("");
   const [error, setError] = useState("");
+  const [fileName, setFileName] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const parseClientData = (data: string): Customer[] => {
     const lines = data.trim().split('\n').filter(line => line.trim());
@@ -48,6 +51,24 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
     return customers;
   };
 
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setFileName(file.name);
+    setError("");
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      setRawData(content);
+    };
+    reader.onerror = () => {
+      setError("Error reading file. Please try again.");
+    };
+    reader.readAsText(file);
+  };
+
   const handleImport = () => {
     try {
       setError("");
@@ -66,6 +87,10 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
 
       onImport(customers);
       setRawData("");
+      setFileName("");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     } catch (err) {
       setError("Error parsing client data. Please check your format.");
     }
@@ -79,7 +104,41 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
           Import Client List
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-6">
+        {/* File Upload Section */}
+        <div className="space-y-2">
+          <Label htmlFor="file-upload">Upload client file</Label>
+          <div className="flex items-center gap-2">
+            <Input
+              id="file-upload"
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.txt"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex-1"
+            >
+              <File className="h-4 w-4 mr-2" />
+              {fileName ? fileName : "Choose CSV or TXT file"}
+            </Button>
+          </div>
+        </div>
+
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t border-muted" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-card px-2 text-muted-foreground">or</span>
+          </div>
+        </div>
+
+        {/* Manual Input Section */}
         <div className="space-y-2">
           <Label htmlFor="client-data">Paste your client data</Label>
           <Textarea
