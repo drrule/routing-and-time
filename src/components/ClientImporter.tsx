@@ -7,6 +7,45 @@ import { Input } from "@/components/ui/input";
 import { Upload, FileText, AlertCircle, File, CheckCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
+// City coordinates for Springfield, MO area
+const getCityCoordinates = (city: string, streetAddress: string) => {
+  const cityCoords: { [key: string]: { lat: number; lng: number; radius: number } } = {
+    'Springfield': { lat: 37.2153, lng: -93.2923, radius: 0.02 },
+    'Nixa': { lat: 37.1397, lng: -93.2671, radius: 0.015 },
+    'Ozark': { lat: 37.0201, lng: -93.2057, radius: 0.015 },
+    'Battlefield': { lat: 37.1450, lng: -93.3710, radius: 0.015 },
+    'Freemont Hills': { lat: 37.2500, lng: -93.3200, radius: 0.015 },
+    'Republic': { lat: 37.1197, lng: -93.4788, radius: 0.015 },
+    'Rogersville': { lat: 37.1242, lng: -93.0532, radius: 0.015 },
+    'Willard': { lat: 37.3042, lng: -93.4288, radius: 0.015 },
+    'Strafford': { lat: 37.2731, lng: -93.1140, radius: 0.015 }
+  };
+
+  // Find matching city (case insensitive)
+  const matchedCity = Object.keys(cityCoords).find(
+    c => city.toLowerCase().includes(c.toLowerCase())
+  );
+
+  const baseCoords = matchedCity 
+    ? cityCoords[matchedCity] 
+    : cityCoords['Springfield']; // Default to Springfield
+
+  // Add some randomness within the city bounds but make it more realistic
+  // Use street address hash to make locations consistent for same address
+  const addressHash = streetAddress.split('').reduce((a, b) => {
+    a = ((a << 5) - a) + b.charCodeAt(0);
+    return a & a;
+  }, 0);
+  
+  const randomX = (Math.sin(addressHash) + 1) / 2; // 0-1
+  const randomY = (Math.cos(addressHash * 2) + 1) / 2; // 0-1
+  
+  return {
+    lat: baseCoords.lat + (randomX - 0.5) * baseCoords.radius,
+    lng: baseCoords.lng + (randomY - 0.5) * baseCoords.radius
+  };
+};
+
 interface Customer {
   id: string;
   name: string;
@@ -60,14 +99,17 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
         const priceNum = parseFloat(price.replace(/[$,]/g, '')) || 45;
         const estimatedTime = Math.max(30, Math.min(120, priceNum)); // 30-120 min based on price
         
+        // Get coordinates based on city/area
+        const coords = getCityCoordinates(city, address);
+        
         const customer: Customer = {
           id: `imported-${index + 1}`,
           name: `${name}${businessType && businessType !== 'Residential' ? ` (${businessType})` : ''}`,
           address: fullAddress || 'Address not provided',
           status: 'pending',
           estimatedTime: estimatedTime,
-          lat: 37.2153 + (Math.random() - 0.5) * 0.1, // Random coords near Springfield, MO area
-          lng: -93.2923 + (Math.random() - 0.5) * 0.1  // Springfield, MO coordinates
+          lat: coords.lat,
+          lng: coords.lng
         };
         console.log("Created customer:", customer);
         customers.push(customer);
