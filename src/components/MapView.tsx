@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Map } from "lucide-react";
 
 interface Customer {
@@ -32,6 +34,7 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
   const markers = useRef<mapboxgl.Marker[]>([]);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [mapboxToken, setMapboxToken] = useState('');
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -45,12 +48,12 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
   };
 
   useEffect(() => {
-    if (!mapContainer.current) return;
+    if (!mapContainer.current || !mapboxToken) return;
 
     console.log("Initializing Mapbox map...");
     
     // Initialize map centered on Springfield, MO
-    mapboxgl.accessToken = 'pk.eyJ1IjoibG92YWJsZS1haSIsImEiOiJjbTVjaHo4NGgxMGU3MmxyeTU1a3BtZzBhIn0.WR6nLdQzBMgdYr5YG4wbCw';
+    mapboxgl.accessToken = mapboxToken;
     
     try {
       map.current = new mapboxgl.Map({
@@ -114,7 +117,7 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
       markers.current = [];
       map.current?.remove();
     };
-  }, []);
+  }, [mapboxToken]);
 
   useEffect(() => {
     console.log("Customer effect triggered:", { 
@@ -300,6 +303,32 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0">
+        {!mapboxToken ? (
+          <div className="p-6">
+            <div className="space-y-4">
+              <div className="text-center space-y-2">
+                <Map className="h-8 w-8 text-muted-foreground mx-auto" />
+                <h3 className="font-semibold">Mapbox Token Required</h3>
+                <p className="text-sm text-muted-foreground">
+                  Enter your Mapbox public token to display the route map
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Input
+                  placeholder="Enter your Mapbox public token (pk.)"
+                  value={mapboxToken}
+                  onChange={(e) => setMapboxToken(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Get your free token at{' '}
+                  <a href="https://mapbox.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                    mapbox.com
+                  </a>
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
         <div className="relative w-full h-[500px] rounded-b-lg bg-muted/10" style={{ minHeight: '400px' }}>
           <div 
             ref={mapContainer} 
@@ -331,6 +360,7 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
             </div>
           )}
         </div>
+        )}
       </CardContent>
     </Card>
   );
