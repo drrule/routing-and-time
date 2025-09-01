@@ -23,9 +23,10 @@ interface HomeBase {
 interface RouteOptimizerProps {
   customers: Customer[];
   homeBase: HomeBase | null;
+  onOptimize?: (optimizedCustomers: Customer[]) => void;
 }
 
-const RouteOptimizer = ({ customers, homeBase }: RouteOptimizerProps) => {
+const RouteOptimizer = ({ customers, homeBase, onOptimize }: RouteOptimizerProps) => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'completed':
@@ -37,8 +38,73 @@ const RouteOptimizer = ({ customers, homeBase }: RouteOptimizerProps) => {
     }
   };
 
+  // Calculate distance between two points using Haversine formula
+  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number) => {
+    const R = 3959; // Earth's radius in miles
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
+  // Optimize route using Nearest Neighbor algorithm
+  const optimizeRoute = () => {
+    if (!homeBase || customers.length === 0) return;
+
+    const unvisited = [...customers];
+    const optimized: Customer[] = [];
+    let currentLat = homeBase.lat;
+    let currentLng = homeBase.lng;
+
+    while (unvisited.length > 0) {
+      let nearestIndex = 0;
+      let nearestDistance = calculateDistance(currentLat, currentLng, unvisited[0].lat, unvisited[0].lng);
+
+      // Find the nearest unvisited customer
+      for (let i = 1; i < unvisited.length; i++) {
+        const distance = calculateDistance(currentLat, currentLng, unvisited[i].lat, unvisited[i].lng);
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestIndex = i;
+        }
+      }
+
+      // Move to the nearest customer
+      const nearestCustomer = unvisited.splice(nearestIndex, 1)[0];
+      optimized.push(nearestCustomer);
+      currentLat = nearestCustomer.lat;
+      currentLng = nearestCustomer.lng;
+    }
+
+    onOptimize?.(optimized);
+  };
+
+  // Calculate total route distance
+  const calculateRouteDistance = () => {
+    if (!homeBase || customers.length === 0) return 0;
+    
+    let totalDistance = 0;
+    let currentLat = homeBase.lat;
+    let currentLng = homeBase.lng;
+
+    for (const customer of customers) {
+      totalDistance += calculateDistance(currentLat, currentLng, customer.lat, customer.lng);
+      currentLat = customer.lat;
+      currentLng = customer.lng;
+    }
+
+    // Add distance back to home base
+    totalDistance += calculateDistance(currentLat, currentLng, homeBase.lat, homeBase.lng);
+    return totalDistance;
+  };
+
   const totalTime = customers.reduce((acc, customer) => acc + customer.estimatedTime, 0);
   const completedJobs = customers.filter(c => c.status === 'completed').length;
+  const totalDistance = calculateRouteDistance();
 
   return (
     <div className="space-y-6">
@@ -86,7 +152,7 @@ const RouteOptimizer = ({ customers, homeBase }: RouteOptimizerProps) => {
               <Fuel className="h-5 w-5 text-primary" />
               <div>
                 <p className="text-sm text-muted-foreground">Est. Miles</p>
-                <p className="text-2xl font-bold text-foreground">23.4</p>
+                <p className="text-2xl font-bold text-foreground">{totalDistance.toFixed(1)}</p>
               </div>
             </div>
           </CardContent>
@@ -104,6 +170,8 @@ const RouteOptimizer = ({ customers, homeBase }: RouteOptimizerProps) => {
             <Button 
               variant="default" 
               className="bg-[var(--gradient-primary)] hover:opacity-90 transition-[var(--transition-smooth)]"
+              onClick={optimizeRoute}
+              disabled={!homeBase || customers.length === 0}
             >
               Optimize Route
             </Button>

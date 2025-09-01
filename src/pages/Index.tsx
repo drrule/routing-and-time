@@ -25,7 +25,7 @@ const Index = () => {
           <div className="space-y-6">
             <HomeBaseSetup homeBase={homeBase} onSave={setHomeBase} />
             <ClientImporter onImport={setCustomers} />
-            <RouteOptimizer customers={customers} homeBase={homeBase} />
+            <RouteOptimizer customers={customers} homeBase={homeBase} onOptimize={setCustomers} />
           </div>
           
           {/* Map View */}
