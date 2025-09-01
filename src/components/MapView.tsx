@@ -31,6 +31,7 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
   const map = useRef<mapboxgl.Map | null>(null);
   const markers = useRef<mapboxgl.Marker[]>([]);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -73,8 +74,35 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
         setMapLoaded(true);
       });
 
+      // Additional events to ensure style is ready in all cases
+      map.current.on('style.load', () => {
+        console.log('Map style loaded');
+        setMapLoaded(true);
+      });
+
+      map.current.on('styledata', () => {
+        if (map.current?.isStyleLoaded()) {
+          console.log('Map styledata -> isStyleLoaded true');
+          setMapLoaded(true);
+        }
+      });
+
+      map.current.once('idle', () => {
+        console.log('Map idle (all tiles/sources loaded)');
+        setMapLoaded(true);
+      });
+
+      // Safety fallback in case events are missed
+      setTimeout(() => {
+        if (map.current && map.current.isStyleLoaded()) {
+          console.log('Fallback timeout: marking map as loaded');
+          setMapLoaded(true);
+        }
+      }, 4000);
+
       map.current.on('error', (e) => {
         console.error("Mapbox error:", e);
+        setMapError((e as any)?.error?.message || 'Map failed to load');
       });
     } catch (error) {
       console.error("Error creating map:", error);
@@ -278,7 +306,15 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
             className="absolute inset-0 rounded-b-lg"
             style={{ background: '#f0f0f0' }}
           />
-          {(!mapLoaded && customers.length === 0) && (
+          {mapError && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-card/95 rounded-b-lg">
+              <div className="text-center space-y-2">
+                <Map className="h-8 w-8 text-destructive mx-auto" />
+                <p className="text-destructive">{mapError}</p>
+              </div>
+            </div>
+          )}
+          {(!mapLoaded && customers.length === 0 && !mapError) && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-card/95 rounded-b-lg">
               <div className="text-center space-y-2">
                 <Map className="h-8 w-8 text-muted-foreground mx-auto" />
@@ -286,7 +322,7 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
               </div>
             </div>
           )}
-          {(!mapLoaded && customers.length > 0) && (
+          {(!mapLoaded && customers.length > 0 && !mapError) && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-card/95 rounded-b-lg">
               <div className="text-center space-y-2">
                 <Map className="h-8 w-8 text-primary mx-auto animate-pulse" />
