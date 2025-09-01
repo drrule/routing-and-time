@@ -1,8 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { MapPin, Clock, Route, Fuel, CheckCircle2, Navigation } from "lucide-react";
+import { MapPin, Clock, Route, Fuel, CheckCircle2, Navigation, GripVertical } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
+import { useState } from "react";
 
 interface Customer {
   id: string;
@@ -28,6 +29,9 @@ interface RouteOptimizerProps {
 }
 
 const RouteOptimizer = ({ customers, homeBase, onOptimize }: RouteOptimizerProps) => {
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'completed':
@@ -166,6 +170,61 @@ const RouteOptimizer = ({ customers, homeBase, onOptimize }: RouteOptimizerProps
   const completedJobs = customers.filter(c => c.status === 'completed').length;
   const totalDistance = calculateRouteDistance();
 
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', '');
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIndex(index);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    
+    if (draggedIndex === null || draggedIndex === dropIndex) {
+      setDraggedIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+
+    // Create new array with reordered customers
+    const newCustomers = [...customers];
+    const draggedCustomer = newCustomers[draggedIndex];
+    
+    // Remove the dragged item
+    newCustomers.splice(draggedIndex, 1);
+    
+    // Insert at new position
+    newCustomers.splice(dropIndex, 0, draggedCustomer);
+    
+    // Update the route
+    onOptimize?.(newCustomers);
+    
+    // Show feedback
+    toast({
+      title: "Route Reordered! 🔄",
+      description: `Moved ${draggedCustomer.name} to position ${dropIndex + 1}`,
+      duration: 2000,
+    });
+
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
   return (
     <div className="space-y-6">
       {/* Route Summary */}
@@ -245,37 +304,58 @@ const RouteOptimizer = ({ customers, homeBase, onOptimize }: RouteOptimizerProps
                 <p>No clients imported yet. Use the import tool above to add your client list.</p>
               </div>
             ) : (
-              customers.map((customer, index) => (
-              <div 
-                key={customer.id} 
-                className="flex items-center justify-between p-4 rounded-lg border bg-gradient-to-r from-card to-muted/10 hover:shadow-[var(--shadow-soft)] transition-[var(--transition-smooth)]"
-              >
-                <div className="flex items-center space-x-4">
-                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground font-semibold text-sm">
-                    {index + 1}
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-foreground">{customer.name}</h3>
-                    <div className="flex items-center text-muted-foreground text-sm">
-                      <MapPin className="h-4 w-4 mr-1" />
-                      {customer.address}
+              <div className="space-y-2">
+                <div className="text-xs text-muted-foreground mb-3 flex items-center gap-2">
+                  <GripVertical className="h-3 w-3" />
+                  Drag and drop to reorder stops manually
+                </div>
+                {customers.map((customer, index) => (
+                <div 
+                  key={customer.id} 
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, index)}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, index)}
+                  onDragEnd={handleDragEnd}
+                  className={`
+                    flex items-center justify-between p-4 rounded-lg border 
+                    bg-gradient-to-r from-card to-muted/10 
+                    hover:shadow-[var(--shadow-soft)] 
+                    transition-[var(--transition-smooth)]
+                    cursor-move select-none
+                    ${draggedIndex === index ? 'opacity-50 scale-95' : ''}
+                    ${dragOverIndex === index && draggedIndex !== index ? 'border-primary border-2 bg-primary/5' : ''}
+                  `}
+                >
+                  <div className="flex items-center space-x-4">
+                    <GripVertical className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground font-semibold text-sm">
+                      {index + 1}
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-foreground">{customer.name}</h3>
+                      <div className="flex items-center text-muted-foreground text-sm">
+                        <MapPin className="h-4 w-4 mr-1" />
+                        {customer.address}
+                      </div>
                     </div>
                   </div>
-                </div>
-                
-                <div className="flex items-center space-x-4">
-                  <div className="text-right">
-                    <div className="flex items-center text-sm text-muted-foreground">
-                      <Clock className="h-4 w-4 mr-1" />
-                      {customer.estimatedTime}min
+                  
+                  <div className="flex items-center space-x-4">
+                    <div className="text-right">
+                      <div className="flex items-center text-sm text-muted-foreground">
+                        <Clock className="h-4 w-4 mr-1" />
+                        {customer.estimatedTime}min
+                      </div>
                     </div>
+                    <Badge className={getStatusColor(customer.status)}>
+                      {customer.status.replace('-', ' ')}
+                    </Badge>
                   </div>
-                  <Badge className={getStatusColor(customer.status)}>
-                    {customer.status.replace('-', ' ')}
-                  </Badge>
                 </div>
+                ))}
               </div>
-              ))
             )}
           </div>
         </CardContent>
