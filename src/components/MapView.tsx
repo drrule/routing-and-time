@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,7 +30,7 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const markers = useRef<mapboxgl.Marker[]>([]);
-  const mapLoaded = useRef(false);
+  const [mapLoaded, setMapLoaded] = useState(false);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -70,7 +70,7 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
       // Wait for map to load before allowing marker/source operations
       map.current.on('load', () => {
         console.log("Map loaded successfully");
-        mapLoaded.current = true;
+        setMapLoaded(true);
       });
 
       map.current.on('error', (e) => {
@@ -91,12 +91,12 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
   useEffect(() => {
     console.log("Customer effect triggered:", { 
       hasMap: !!map.current, 
-      mapLoaded: mapLoaded.current, 
+      mapLoaded, 
       customerCount: customers.length,
       hasHomeBase: !!homeBase 
     });
     
-    if (!map.current || !mapLoaded.current) {
+    if (!map.current || !mapLoaded) {
       console.log("Map not ready yet, skipping marker update");
       return;
     }
@@ -215,7 +215,7 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
       }
       
       // Only add source if map style is loaded
-      if (mapLoaded.current) {
+      if (mapLoaded) {
       
         if (map.current.getSource('route')) {
           (map.current.getSource('route') as mapboxgl.GeoJSONSource).setData({
@@ -256,7 +256,7 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
         }
       }
     }
-  }, [customers, homeBase, mapLoaded.current]);
+  }, [customers, homeBase, mapLoaded]);
 
   return (
     <Card className="h-full shadow-[var(--shadow-medium)]">
@@ -278,7 +278,7 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
             className="absolute inset-0 rounded-b-lg"
             style={{ background: '#f0f0f0' }}
           />
-          {(!mapLoaded.current && customers.length === 0) && (
+          {(!mapLoaded && customers.length === 0) && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-card/95 rounded-b-lg">
               <div className="text-center space-y-2">
                 <Map className="h-8 w-8 text-muted-foreground mx-auto" />
@@ -286,7 +286,7 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
               </div>
             </div>
           )}
-          {(!mapLoaded.current && customers.length > 0) && (
+          {(!mapLoaded && customers.length > 0) && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-card/95 rounded-b-lg">
               <div className="text-center space-y-2">
                 <Map className="h-8 w-8 text-primary mx-auto animate-pulse" />
