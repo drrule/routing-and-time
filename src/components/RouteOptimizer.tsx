@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MapPin, Clock, Route, Fuel, CheckCircle2, Navigation } from "lucide-react";
+import { toast } from "@/components/ui/use-toast";
 
 interface Customer {
   id: string;
@@ -53,7 +54,22 @@ const RouteOptimizer = ({ customers, homeBase, onOptimize }: RouteOptimizerProps
 
   // Optimize route using Nearest Neighbor algorithm
   const optimizeRoute = () => {
-    if (!homeBase || customers.length === 0) return;
+    if (!homeBase) {
+      toast({
+        title: "Set Home Base",
+        description: "Please set a starting address before optimizing.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (customers.length === 0) {
+      toast({
+        title: "No clients imported",
+        description: "Import your client list to optimize a route.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const unvisited = [...customers];
     const optimized: Customer[] = [];
@@ -172,7 +188,6 @@ const RouteOptimizer = ({ customers, homeBase, onOptimize }: RouteOptimizerProps
               size="sm"
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
               onClick={optimizeRoute}
-              disabled={!homeBase || customers.length === 0}
             >
               <Route className="h-4 w-4 mr-2" />
               Optimize Route
