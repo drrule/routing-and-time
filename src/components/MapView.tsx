@@ -68,6 +68,15 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
         'top-right'
       );
 
+      // Style the Mapbox logo to be less prominent (but still visible per ToS)
+      map.current.on('load', () => {
+        const logo = document.querySelector('.mapboxgl-ctrl-logo') as HTMLElement;
+        if (logo) {
+          logo.style.opacity = '0.6';
+          logo.style.transform = 'scale(0.8)';
+        }
+      });
+
       // Wait for map to load before allowing marker/source operations
       map.current.on('load', () => {
         console.log("Map loaded successfully");
