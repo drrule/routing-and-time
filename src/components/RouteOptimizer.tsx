@@ -71,10 +71,15 @@ const RouteOptimizer = ({ customers, homeBase, onOptimize }: RouteOptimizerProps
       return;
     }
 
+    // Calculate current route distance for comparison
+    const currentDistance = calculateRouteDistance();
+
     const unvisited = [...customers];
     const optimized: Customer[] = [];
     let currentLat = homeBase.lat;
     let currentLng = homeBase.lng;
+
+    console.log('Starting optimization from home base:', { lat: currentLat, lng: currentLng });
 
     while (unvisited.length > 0) {
       let nearestIndex = 0;
@@ -94,9 +99,48 @@ const RouteOptimizer = ({ customers, homeBase, onOptimize }: RouteOptimizerProps
       optimized.push(nearestCustomer);
       currentLat = nearestCustomer.lat;
       currentLng = nearestCustomer.lng;
+      
+      console.log(`Added ${nearestCustomer.name} at distance ${nearestDistance.toFixed(1)} miles`);
     }
 
+    // Calculate optimized route distance
+    const optimizedDistance = calculateOptimizedRouteDistance(optimized);
+    const savings = currentDistance - optimizedDistance;
+    const savingsPercent = currentDistance > 0 ? (savings / currentDistance * 100) : 0;
+
+    console.log('Route optimization complete:', {
+      original: currentDistance.toFixed(1),
+      optimized: optimizedDistance.toFixed(1),
+      savings: savings.toFixed(1)
+    });
+
     onOptimize?.(optimized);
+
+    // Show optimization results
+    toast({
+      title: "Route Optimized! 🎯",
+      description: `Saved ${savings.toFixed(1)} miles (${savingsPercent.toFixed(1)}%). New route: ${optimizedDistance.toFixed(1)} miles`,
+      duration: 5000,
+    });
+  };
+
+  // Calculate distance for a specific route order
+  const calculateOptimizedRouteDistance = (routeCustomers: Customer[]) => {
+    if (!homeBase || routeCustomers.length === 0) return 0;
+    
+    let totalDistance = 0;
+    let currentLat = homeBase.lat;
+    let currentLng = homeBase.lng;
+
+    for (const customer of routeCustomers) {
+      totalDistance += calculateDistance(currentLat, currentLng, customer.lat, customer.lng);
+      currentLat = customer.lat;
+      currentLng = customer.lng;
+    }
+
+    // Add distance back to home base
+    totalDistance += calculateDistance(currentLat, currentLng, homeBase.lat, homeBase.lng);
+    return totalDistance;
   };
 
   // Calculate total route distance
