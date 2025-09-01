@@ -251,46 +251,59 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
         coordinates = [[homeBase.lng, homeBase.lat], ...coordinates, [homeBase.lng, homeBase.lat]];
       }
       
-      // Only add source if map style is loaded
+      // Only add source if map style is loaded (robust)
       if (mapLoaded) {
-      
-        if (map.current.getSource('route')) {
-          (map.current.getSource('route') as mapboxgl.GeoJSONSource).setData({
-            type: 'Feature',
-            properties: {},
-            geometry: {
-              type: 'LineString',
-              coordinates: coordinates
+        const addOrUpdateRoute = () => {
+          if (!map.current) return;
+          if (!map.current.isStyleLoaded()) {
+            console.log('Style not loaded yet, waiting for idle...');
+            map.current.once('idle', addOrUpdateRoute);
+            return;
+          }
+          try {
+            if (map.current.getSource('route')) {
+              (map.current.getSource('route') as mapboxgl.GeoJSONSource).setData({
+                type: 'Feature',
+                properties: {},
+                geometry: {
+                  type: 'LineString',
+                  coordinates: coordinates
+                }
+              });
+            } else {
+              map.current.addSource('route', {
+                type: 'geojson',
+                data: {
+                  type: 'Feature',
+                  properties: {},
+                  geometry: {
+                    type: 'LineString',
+                    coordinates: coordinates
+                  }
+                }
+              });
+  
+              map.current.addLayer({
+                id: 'route',
+                type: 'line',
+                source: 'route',
+                layout: {
+                  'line-join': 'round',
+                  'line-cap': 'round'
+                },
+                paint: {
+                  'line-color': '#3b82f6',
+                  'line-width': 3,
+                  'line-opacity': 0.7
+                }
+              });
             }
-          });
-        } else {
-          map.current.addSource('route', {
-            type: 'geojson',
-            data: {
-              type: 'Feature',
-              properties: {},
-              geometry: {
-                type: 'LineString',
-                coordinates: coordinates
-              }
-            }
-          });
+          } catch (err) {
+            console.error('Failed to add/update route:', err);
+          }
+        };
 
-          map.current.addLayer({
-            id: 'route',
-            type: 'line',
-            source: 'route',
-            layout: {
-              'line-join': 'round',
-              'line-cap': 'round'
-            },
-            paint: {
-              'line-color': '#3b82f6',
-              'line-width': 3,
-              'line-opacity': 0.7
-            }
-          });
-        }
+        addOrUpdateRoute();
       }
     }
   }, [customers, homeBase, mapLoaded]);
