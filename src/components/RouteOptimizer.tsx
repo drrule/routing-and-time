@@ -169,10 +169,12 @@ const RouteOptimizer = ({ customers, homeBase, onOptimize }: RouteOptimizerProps
             </CardTitle>
             <Button 
               variant="default" 
-              className="bg-[var(--gradient-primary)] hover:opacity-90 transition-[var(--transition-smooth)]"
+              size="sm"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
               onClick={optimizeRoute}
               disabled={!homeBase || customers.length === 0}
             >
+              <Route className="h-4 w-4 mr-2" />
               Optimize Route
             </Button>
           </div>
