@@ -148,7 +148,41 @@ const identifyStreetGroups = (points: Point[]): HouseGroup[] => {
   return groups;
 };
 
-// Balanced clustering for multi-day route planning considering drive times
+// Estimate work time for a customer based on property characteristics
+const estimateCustomerWorkTime = (customer: any): number => {
+  // Base service time in minutes
+  let workTime = 60; // 1 hour default
+  
+  // Check for indicators of large properties
+  const address = customer.address?.toLowerCase() || '';
+  const notes = customer.notes?.toLowerCase() || '';
+  const name = customer.name?.toLowerCase() || '';
+  
+  // Property size indicators
+  const largePropertyIndicators = [
+    'estate', 'ranch', 'farm', 'acreage', 'acres', 'mansion', 'compound',
+    'commercial', 'business', 'office', 'warehouse', 'industrial',
+    'church', 'school', 'hospital', 'hotel', 'resort'
+  ];
+  
+  const isLargeProperty = largePropertyIndicators.some(indicator => 
+    address.includes(indicator) || notes.includes(indicator) || name.includes(indicator)
+  );
+  
+  if (isLargeProperty) {
+    workTime = 180; // 3 hours for large properties
+    console.log(`Large property detected: ${customer.name} - estimated ${workTime} minutes`);
+  }
+  
+  // Additional time indicators in notes
+  if (notes.includes('large') || notes.includes('big') || notes.includes('huge')) {
+    workTime += 60; // Add extra hour
+  }
+  
+  return workTime;
+};
+
+// Balanced clustering for multi-day route planning considering work time
 export const clusterCustomers = (customers: any[], numDays: number, homeBase?: { lat: number; lng: number }): Cluster[] => {
   if (customers.length === 0 || numDays <= 0) return [];
   
@@ -156,7 +190,7 @@ export const clusterCustomers = (customers: any[], numDays: number, homeBase?: {
     id: customer.id,
     lat: customer.lat,
     lng: customer.lng,
-    data: customer
+    data: { ...customer, estimatedWorkTime: estimateCustomerWorkTime(customer) }
   }));
 
   // If we have fewer customers than days, create one cluster per customer
@@ -174,8 +208,8 @@ export const clusterCustomers = (customers: any[], numDays: number, homeBase?: {
   // Start with geographic K-means clustering using street groups as units
   let clusters = performKMeansClusteringWithGroups(streetGroups, numDays, homeBase);
   
-  // Balance clusters by total drive time rather than just customer count
-  clusters = balanceClustersByDriveTimeWithGroups(clusters, streetGroups, homeBase);
+  // Balance clusters by total work time (drive time + service time)
+  clusters = balanceClustersByWorkTimeWithGroups(clusters, streetGroups, homeBase);
   
   return clusters;
 };
@@ -329,14 +363,39 @@ const getBounds = (points: Point[]) => {
   });
 };
 
-// Balance clusters by total drive time to create even working days (with house groups)
-const balanceClustersByDriveTimeWithGroups = (clusters: Cluster[], houseGroups: HouseGroup[], homeBase?: { lat: number; lng: number }): Cluster[] => {
+// Calculate total work time for a cluster (drive time + service time)
+const calculateClusterWorkTime = (cluster: Cluster, homeBase: { lat: number; lng: number }): number => {
+  if (cluster.points.length === 0) return 0;
+
+  const driveTime = calculateClusterDriveTime(cluster, homeBase);
+  const serviceTime = cluster.points.reduce((total, point) => 
+    total + (point.data.estimatedWorkTime || 60), 0
+  );
+  
+  return driveTime + serviceTime;
+};
+
+// Calculate total work time for all clusters
+const calculateTotalWorkTime = (clusters: Cluster[], homeBase: { lat: number; lng: number }): number => {
+  return clusters.reduce((total, cluster) => total + calculateClusterWorkTime(cluster, homeBase), 0);
+};
+
+// Balance clusters by total work time to create even working days (with house groups)
+const balanceClustersByWorkTimeWithGroups = (clusters: Cluster[], houseGroups: HouseGroup[], homeBase?: { lat: number; lng: number }): Cluster[] => {
   if (!homeBase) return clusters;
 
-  const targetDriveTimePerDay = calculateTotalDriveTime(clusters, homeBase) / clusters.length;
-  const tolerance = targetDriveTimePerDay * 0.15; // Allow 15% variance
+  const targetWorkTimePerDay = calculateTotalWorkTime(clusters, homeBase) / clusters.length;
+  const tolerance = targetWorkTimePerDay * 0.15; // Allow 15% variance
   
-  console.log(`Target drive time per day: ${targetDriveTimePerDay.toFixed(1)} minutes`);
+  console.log(`Target work time per day: ${targetWorkTimePerDay.toFixed(1)} minutes (drive + service)`);
+  
+  // Log current cluster work times
+  clusters.forEach((cluster, index) => {
+    const workTime = calculateClusterWorkTime(cluster, homeBase);
+    const driveTime = calculateClusterDriveTime(cluster, homeBase);
+    const serviceTime = workTime - driveTime;
+    console.log(`Day ${index + 1}: ${workTime.toFixed(1)} min total (${driveTime.toFixed(1)} drive + ${serviceTime.toFixed(1)} service)`);
+  });
 
   let balanced = false;
   let attempts = 0;
@@ -347,23 +406,25 @@ const balanceClustersByDriveTimeWithGroups = (clusters: Cluster[], houseGroups: 
     attempts++;
 
     for (let i = 0; i < clusters.length; i++) {
-      const clusterDriveTime = calculateClusterDriveTime(clusters[i], homeBase);
+      const clusterWorkTime = calculateClusterWorkTime(clusters[i], homeBase);
       
-      if (clusterDriveTime > targetDriveTimePerDay + tolerance) {
+      if (clusterWorkTime > targetWorkTimePerDay + tolerance) {
         // This cluster is too heavy, try to move a house group to a lighter cluster
-        const groupToMove = findBestHouseGroupToMove(clusters[i], clusters, houseGroups, homeBase, 'lighten');
+        const groupToMove = findBestHouseGroupToMoveByWorkTime(clusters[i], clusters, houseGroups, homeBase, 'lighten');
         if (groupToMove) {
           moveHouseGroupBetweenClusters(clusters, i, groupToMove.targetCluster, groupToMove.houseGroup, houseGroups);
           balanced = false;
-          console.log(`Moved house group (${groupToMove.houseGroup.customers.length} customers) from cluster ${i} to ${groupToMove.targetCluster}`);
+          const groupWorkTime = groupToMove.houseGroup.customers.reduce((sum, c) => sum + (c.data?.estimatedWorkTime || 60), 0);
+          console.log(`Moved house group (${groupToMove.houseGroup.customers.length} customers, ${groupWorkTime} min) from day ${i + 1} to ${groupToMove.targetCluster + 1}`);
         }
-      } else if (clusterDriveTime < targetDriveTimePerDay - tolerance) {
+      } else if (clusterWorkTime < targetWorkTimePerDay - tolerance) {
         // This cluster is too light, try to get a house group from a heavier cluster
-        const groupToMove = findBestHouseGroupToMove(clusters[i], clusters, houseGroups, homeBase, 'heavier');
+        const groupToMove = findBestHouseGroupToMoveByWorkTime(clusters[i], clusters, houseGroups, homeBase, 'heavier');
         if (groupToMove) {
           moveHouseGroupBetweenClusters(clusters, groupToMove.targetCluster, i, groupToMove.houseGroup, houseGroups);
           balanced = false;
-          console.log(`Moved house group (${groupToMove.houseGroup.customers.length} customers) to cluster ${i} from ${groupToMove.targetCluster}`);
+          const groupWorkTime = groupToMove.houseGroup.customers.reduce((sum, c) => sum + (c.data?.estimatedWorkTime || 60), 0);
+          console.log(`Moved house group (${groupToMove.houseGroup.customers.length} customers, ${groupWorkTime} min) to day ${i + 1} from ${groupToMove.targetCluster + 1}`);
         }
       }
     }
@@ -371,6 +432,13 @@ const balanceClustersByDriveTimeWithGroups = (clusters: Cluster[], houseGroups: 
 
   // Ensure no empty clusters
   balanceEmptyClusters(clusters);
+  
+  // Log final balance
+  console.log('Final day balance:');
+  clusters.forEach((cluster, index) => {
+    const workTime = calculateClusterWorkTime(cluster, homeBase);
+    console.log(`Day ${index + 1}: ${workTime.toFixed(1)} minutes total`);
+  });
   
   return clusters;
 };
@@ -450,7 +518,42 @@ const calculateClusterDriveTime = (cluster: Cluster, homeBase: { lat: number; ln
   return totalDriveTime;
 };
 
-// Find best house group to move for balancing
+// Find best house group to move for balancing based on work time
+const findBestHouseGroupToMoveByWorkTime = (
+  cluster: Cluster, 
+  allClusters: Cluster[], 
+  houseGroups: HouseGroup[],
+  homeBase: { lat: number; lng: number },
+  direction: 'lighten' | 'heavier'
+): { houseGroup: HouseGroup; targetCluster: number } | null => {
+  const currentWorkTime = calculateClusterWorkTime(cluster, homeBase);
+  
+  // Find house groups that belong to this cluster
+  const clusterHouseGroups = houseGroups.filter(group => 
+    group.customers.some(customer => 
+      cluster.points.some(point => point.id === customer.id)
+    )
+  );
+
+  for (const houseGroup of clusterHouseGroups) {
+    for (let i = 0; i < allClusters.length; i++) {
+      if (allClusters[i].id === cluster.id) continue;
+      
+      const targetWorkTime = calculateClusterWorkTime(allClusters[i], homeBase);
+      
+      // Check if this move would improve balance
+      if (direction === 'lighten' && targetWorkTime < currentWorkTime) {
+        return { houseGroup, targetCluster: i };
+      } else if (direction === 'heavier' && targetWorkTime > currentWorkTime) {
+        return { houseGroup, targetCluster: i };
+      }
+    }
+  }
+  
+  return null;
+};
+
+// Find best house group to move for balancing (legacy drive time version)
 const findBestHouseGroupToMove = (
   cluster: Cluster, 
   allClusters: Cluster[], 
