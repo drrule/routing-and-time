@@ -112,7 +112,7 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
         const coords = await geocodeAddress(fullAddress);
         
         const customer: Customer = {
-          id: `imported-${index + 1}`,
+          id: `imported-${Date.now()}-${index + 1}`,
           name: name,
           address: fullAddress || 'Address not provided',
           completed: false,
