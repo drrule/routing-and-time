@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { MapPin, Route, Fuel, CheckCircle2, Navigation, GripVertical, CheckCircle } from "lucide-react";
+import { MapPin, Route, Fuel, CheckCircle2, Navigation, GripVertical, CheckCircle, Copy } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { useState } from "react";
 
@@ -216,6 +216,24 @@ const RouteOptimizer = ({ customers, homeBase, onOptimize }: RouteOptimizerProps
     setDragOverIndex(null);
   };
 
+  const copyAddress = async (address: string, customerName: string) => {
+    try {
+      await navigator.clipboard.writeText(address);
+      toast({
+        title: "Address Copied! 📋",
+        description: `${customerName}'s address copied to clipboard`,
+        duration: 2000,
+      });
+    } catch (error) {
+      toast({
+        title: "Copy Failed",
+        description: "Unable to copy address to clipboard",
+        variant: "destructive",
+        duration: 2000,
+      });
+    }
+  };
+
   const toggleCustomerStatus = (customerId: string) => {
     const updatedCustomers = customers.map(customer =>
       customer.id === customerId
@@ -335,9 +353,18 @@ const RouteOptimizer = ({ customers, homeBase, onOptimize }: RouteOptimizerProps
                       <p className={`font-medium ${customer.completed ? 'line-through text-muted-foreground' : ''}`}>
                         {customer.name}
                       </p>
-                      <p className={`text-sm text-muted-foreground ${customer.completed ? 'line-through' : ''}`}>
-                        {customer.address}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className={`text-sm text-muted-foreground ${customer.completed ? 'line-through' : ''}`}>
+                          {customer.address}
+                        </p>
+                        <button
+                          onClick={() => copyAddress(customer.address, customer.name)}
+                          className="p-1 rounded hover:bg-muted/50 transition-colors group"
+                          title="Copy address"
+                        >
+                          <Copy className="h-3 w-3 text-muted-foreground group-hover:text-primary" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                   
