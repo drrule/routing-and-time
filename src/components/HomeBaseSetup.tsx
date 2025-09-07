@@ -24,6 +24,41 @@ const HomeBaseSetup = ({ homeBase, onSave }: HomeBaseSetupProps) => {
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState("");
 
+  const geocodeAddress = async (address: string) => {
+    try {
+      // For now, use a basic geocoding approach with major cities
+      // In production, you'd use Mapbox Geocoding API
+      const cityCoordinates: { [key: string]: { lat: number; lng: number } } = {
+        'springfield': { lat: 37.2153, lng: -93.2923 },
+        'kansas city': { lat: 39.0997, lng: -94.5786 },
+        'st. louis': { lat: 38.6270, lng: -90.1994 },
+        'columbia': { lat: 38.9517, lng: -92.3341 },
+        'independence': { lat: 39.0911, lng: -94.4155 },
+        'lee\'s summit': { lat: 38.9108, lng: -94.3822 },
+        'o\'fallon': { lat: 38.8106, lng: -90.6998 },
+        'st. charles': { lat: 38.7881, lng: -90.4974 },
+        'st. peters': { lat: 38.7875, lng: -90.6298 },
+        'florissant': { lat: 38.7892, lng: -90.3226 }
+      };
+
+      const normalizedAddress = address.toLowerCase();
+      
+      // Check if address contains any known city
+      for (const [city, coords] of Object.entries(cityCoordinates)) {
+        if (normalizedAddress.includes(city)) {
+          return coords;
+        }
+      }
+
+      // Default to Springfield, MO if no match found
+      return cityCoordinates['springfield'];
+    } catch (error) {
+      console.error('Geocoding error:', error);
+      // Fallback to Springfield, MO
+      return { lat: 37.2153, lng: -93.2923 };
+    }
+  };
+
   const handleSave = async () => {
     if (!name.trim() || !address.trim()) {
       setMessage("Please enter both business name and address");
@@ -34,13 +69,13 @@ const HomeBaseSetup = ({ homeBase, onSave }: HomeBaseSetupProps) => {
     setMessage("");
 
     try {
-      // For now, generate coordinates around Springfield, MO area
-      // In a real app, you'd geocode the address
+      const coordinates = await geocodeAddress(address.trim());
+      
       const newHomeBase: HomeBase = {
         name: name.trim(),
         address: address.trim(),
-        lat: 37.2153 + (Math.random() - 0.5) * 0.01, // Springfield, MO area
-        lng: -93.2923 + (Math.random() - 0.5) * 0.01
+        lat: coordinates.lat,
+        lng: coordinates.lng
       };
 
       onSave(newHomeBase);
