@@ -463,6 +463,85 @@ const calculateClusterWorkTime = (cluster: Cluster, homeBase: { lat: number; lng
   return driveTime + serviceTime;
 };
 
+// Identify outliers that are causing uneven distribution
+const identifyOutliers = (clusters: Cluster[], houseGroups: HouseGroup[], targetWorkTime: number, homeBase: { lat: number; lng: number }): void => {
+  console.log('\n🔍 OUTLIER DETECTION ANALYSIS:');
+  
+  // 1. Identify clusters with extreme imbalances
+  const workTimes = clusters.map((cluster, index) => ({
+    dayIndex: index + 1,
+    workTime: calculateClusterWorkTime(cluster, homeBase),
+    customerCount: cluster.points.length
+  }));
+  
+  const avgWorkTime = workTimes.reduce((sum, day) => sum + day.workTime, 0) / workTimes.length;
+  const extremeThreshold = avgWorkTime * 0.4; // 40% deviation is extreme
+  
+  workTimes.forEach(day => {
+    const deviation = Math.abs(day.workTime - avgWorkTime);
+    const deviationPercent = (deviation / avgWorkTime * 100).toFixed(1);
+    
+    if (deviation > extremeThreshold) {
+      console.warn(`🚨 EXTREME IMBALANCE - Day ${day.dayIndex}: ${day.workTime.toFixed(1)} min (${deviationPercent}% from average)`);
+    }
+  });
+  
+  // 2. Identify high-workload customers (potential outliers)
+  const allCustomers = clusters.flatMap(cluster => cluster.points);
+  const avgCustomerWorkTime = allCustomers.reduce((sum, customer) => sum + (customer.data.estimatedWorkTime || 60), 0) / allCustomers.length;
+  
+  const highWorkloadCustomers = allCustomers.filter(customer => {
+    const workTime = customer.data.estimatedWorkTime || 60;
+    return workTime > avgCustomerWorkTime * 2; // More than 2x average
+  });
+  
+  if (highWorkloadCustomers.length > 0) {
+    console.warn(`⚠️  HIGH-WORKLOAD CUSTOMERS DETECTED (${highWorkloadCustomers.length}):`);
+    highWorkloadCustomers.forEach(customer => {
+      const workTime = customer.data.estimatedWorkTime || 60;
+      const multiplier = (workTime / avgCustomerWorkTime).toFixed(1);
+      console.warn(`   • ${customer.data.name}: ${workTime} min (${multiplier}x average) - ${customer.data.address}`);
+    });
+  }
+  
+  // 3. Identify large house groups that are hard to balance
+  const largeGroups = houseGroups.filter(group => group.customers.length > 3);
+  if (largeGroups.length > 0) {
+    console.warn(`📍 LARGE STREET GROUPS DETECTED (${largeGroups.length}):`);
+    largeGroups.forEach(group => {
+      const totalWorkTime = group.customers.reduce((sum, customer) => sum + (customer.data.estimatedWorkTime || 60), 0);
+      const addresses = group.customers.map(c => c.data.address).slice(0, 2).join(', ');
+      console.warn(`   • ${group.customers.length} customers, ${totalWorkTime} min total - ${addresses}...`);
+    });
+  }
+  
+  // 4. Identify geographic outliers (customers far from others)
+  clusters.forEach((cluster, dayIndex) => {
+    if (cluster.points.length < 2) return;
+    
+    const centroid = cluster.centroid;
+    const distances = cluster.points.map(customer => 
+      calculateDistance(centroid.lat, centroid.lng, customer.lat, customer.lng)
+    );
+    
+    const avgDistance = distances.reduce((sum, d) => sum + d, 0) / distances.length;
+    const farCustomers = cluster.points.filter((customer, index) => {
+      const distance = distances[index];
+      return distance > avgDistance * 2.5; // More than 2.5x the average distance from centroid
+    });
+    
+    if (farCustomers.length > 0) {
+      console.warn(`🗺️  GEOGRAPHIC OUTLIERS on Day ${dayIndex + 1} (${farCustomers.length}):`);
+      farCustomers.forEach(customer => {
+        const distance = calculateDistance(centroid.lat, centroid.lng, customer.lat, customer.lng);
+        console.warn(`   • ${customer.data.name}: ${distance.toFixed(1)} miles from cluster center - ${customer.data.address}`);
+      });
+    }
+  });
+  
+  console.log('📊 OUTLIER ANALYSIS COMPLETE\n');
+};
+
 // Calculate total work time for all clusters
 const calculateTotalWorkTime = (clusters: Cluster[], homeBase: { lat: number; lng: number }): number => {
   return clusters.reduce((total, cluster) => total + calculateClusterWorkTime(cluster, homeBase), 0);
@@ -476,6 +555,9 @@ const balanceClustersByWorkTimeWithGroups = (clusters: Cluster[], houseGroups: H
   const tolerance = targetWorkTimePerDay * 0.15; // Allow 15% variance
   
   console.log(`Target work time per day: ${targetWorkTimePerDay.toFixed(1)} minutes (drive + service)`);
+  
+  // OUTLIER DETECTION: Identify problematic customers and groups
+  identifyOutliers(clusters, houseGroups, targetWorkTimePerDay, homeBase);
   
   // Log current cluster work times
   clusters.forEach((cluster, index) => {
