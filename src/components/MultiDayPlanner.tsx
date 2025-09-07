@@ -34,8 +34,19 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansCha
   const [dayPlans, setDayPlans] = useState<DayPlan[]>([]);
   const [draggedCustomer, setDraggedCustomer] = useState<Customer | null>(null);
   const [dragOverDay, setDragOverDay] = useState<number | null>(null);
+  const [hasNewCustomers, setHasNewCustomers] = useState(false);
+  const [lastCustomerCount, setLastCustomerCount] = useState(0);
 
   const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+  // Track when new customers are added
+  useEffect(() => {
+    const currentCount = customers.length;
+    if (currentCount > lastCustomerCount) {
+      setHasNewCustomers(true);
+    }
+    setLastCustomerCount(currentCount);
+  }, [customers.length, lastCustomerCount]);
 
   // Generate initial clustering when customers or settings change
   useEffect(() => {
@@ -82,6 +93,9 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansCha
 
     setDayPlans(plans.filter(plan => plan.customers.length > 0));
     onDayPlansChange(plans.filter(plan => plan.customers.length > 0));
+    
+    // Hide re-cluster button after clustering
+    setHasNewCustomers(false);
   };
 
   const calculateDayDistance = (dayCustomers: Customer[]): number => {
@@ -213,6 +227,8 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansCha
 
     setDayPlans(updatedPlans);
     onDayPlansChange(updatedPlans);
+    setHasNewCustomers(false); // Hide re-cluster button after manual move
+    setHasNewCustomers(false); // Hide re-cluster button after manual adjustment
     setDraggedCustomer(null);
     setDragOverDay(null);
 
@@ -375,31 +391,33 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansCha
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <label htmlFor="num-days" className="text-sm font-medium">Working Days:</label>
-              <Select value={numDays.toString()} onValueChange={(value) => setNumDays(parseInt(value))}>
-                <SelectTrigger className="w-20">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {[2, 3, 4, 5, 6, 7].map(num => (
-                    <SelectItem key={num} value={num.toString()}>{num}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <Button onClick={generateDayPlans} variant="outline" size="sm">
-              <Shuffle className="h-4 w-4 mr-2" />
-              Re-cluster
-            </Button>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <label htmlFor="num-days" className="text-sm font-medium">Working Days:</label>
+                <Select value={numDays.toString()} onValueChange={(value) => setNumDays(parseInt(value))}>
+                  <SelectTrigger className="w-20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[2, 3, 4, 5, 6, 7].map(num => (
+                      <SelectItem key={num} value={num.toString()}>{num}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {hasNewCustomers && (
+                <Button onClick={generateDayPlans} variant="outline" size="sm">
+                  <Shuffle className="h-4 w-4 mr-2" />
+                  Re-cluster
+                </Button>
+              )}
 
-            <Button onClick={optimizeDayRoutes} variant="default" size="sm">
-              <Route className="h-4 w-4 mr-2" />
-              Optimize All Routes
-            </Button>
-          </div>
+              <Button onClick={optimizeDayRoutes} variant="default" size="sm">
+                <Route className="h-4 w-4 mr-2" />
+                Optimize All Routes
+              </Button>
+            </div>
 
           {/* Summary */}
           {dayPlans.length > 0 && (
