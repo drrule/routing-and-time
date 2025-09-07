@@ -32,53 +32,119 @@ export const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2
   return R * c;
 };
 
-// Identify customers close enough to be serviced in one vehicle stop (within ~3 houses)
-const HOUSE_GROUP_DISTANCE = 0.1; // miles (increased from 0.05 - roughly 6-8 houses)
+// Parse address to extract street info
+const parseAddress = (address: string) => {
+  // Remove common prefixes and normalize
+  const normalized = address.toLowerCase().trim();
+  
+  // Extract house number and street name
+  const match = normalized.match(/^(\d+)\s+(.+?)(?:\s*,|$)/);
+  if (!match) return null;
+  
+  const houseNumber = parseInt(match[1]);
+  let streetName = match[2];
+  
+  // Normalize street name (remove directional prefixes/suffixes, standardize abbreviations)
+  streetName = streetName
+    .replace(/^(north|south|east|west|n|s|e|w)\s+/i, '')
+    .replace(/\s+(north|south|east|west|n|s|e|w)$/i, '')
+    .replace(/\s+(st|street|ave|avenue|rd|road|dr|drive|ln|lane|blvd|boulevard|ct|court|pl|place|way|cir|circle)$/i, '')
+    .trim();
+  
+  return { houseNumber, streetName };
+};
 
-const identifyHouseGroups = (points: Point[]): HouseGroup[] => {
-  const groups: HouseGroup[] = [];
-  const used = new Set<string>();
-
+// Identify customers on the same street who could be serviced in one stop
+const identifyStreetGroups = (points: Point[]): HouseGroup[] => {
+  const streetMap = new Map<string, Point[]>();
+  
+  // Group customers by street name
   points.forEach(point => {
-    if (used.has(point.id)) return;
-
-    const group: Point[] = [point];
-    used.add(point.id);
-
-    // Find all other points within house group distance
-    points.forEach(otherPoint => {
-      if (used.has(otherPoint.id)) return;
-      
-      const distance = calculateDistance(point.lat, point.lng, otherPoint.lat, otherPoint.lng);
-      if (distance <= HOUSE_GROUP_DISTANCE) {
-        group.push(otherPoint);
-        used.add(otherPoint.id);
+    const parsed = parseAddress(point.data.address);
+    if (parsed) {
+      const key = parsed.streetName;
+      if (!streetMap.has(key)) {
+        streetMap.set(key, []);
       }
-    });
-
-    // Calculate centroid of the group
-    const centroid = {
-      lat: group.reduce((sum, p) => sum + p.lat, 0) / group.length,
-      lng: group.reduce((sum, p) => sum + p.lng, 0) / group.length
-    };
-
-    groups.push({
-      id: `group-${groups.length}`,
-      customers: group,
-      centroid
-    });
-  });
-
-  console.log(`Identified ${groups.length} house groups from ${points.length} customers`);
-  groups.forEach((group, index) => {
-    if (group.customers.length > 1) {
-      console.log(`House group ${index + 1}: ${group.customers.length} customers within walking distance`);
-      group.customers.forEach(customer => {
-        console.log(`  - ${customer.data.name} at ${customer.data.address}`);
-      });
+      streetMap.get(key)!.push(point);
     }
   });
-
+  
+  const groups: HouseGroup[] = [];
+  
+  // For each street, create walking groups
+  streetMap.forEach((streetCustomers, streetName) => {
+    if (streetCustomers.length === 1) {
+      // Single customer on this street
+      const customer = streetCustomers[0];
+      groups.push({
+        id: `group-${groups.length}`,
+        customers: [customer],
+        centroid: { lat: customer.lat, lng: customer.lng }
+      });
+    } else {
+      // Multiple customers on same street - sort by house number
+      const sorted = streetCustomers
+        .map(customer => ({
+          customer,
+          parsed: parseAddress(customer.data.address)
+        }))
+        .filter(item => item.parsed)
+        .sort((a, b) => a.parsed!.houseNumber - b.parsed!.houseNumber);
+      
+      // Group nearby house numbers (within ~10 house numbers, accounting for odd/even)
+      let currentGroup: Point[] = [];
+      let lastHouseNumber = -1;
+      
+      sorted.forEach(({ customer, parsed }) => {
+        const houseNumber = parsed!.houseNumber;
+        
+        if (currentGroup.length === 0 || 
+            Math.abs(houseNumber - lastHouseNumber) <= 10) {
+          // Add to current group
+          currentGroup.push(customer);
+          lastHouseNumber = houseNumber;
+        } else {
+          // Start new group
+          if (currentGroup.length > 0) {
+            const centroid = {
+              lat: currentGroup.reduce((sum, p) => sum + p.lat, 0) / currentGroup.length,
+              lng: currentGroup.reduce((sum, p) => sum + p.lng, 0) / currentGroup.length
+            };
+            groups.push({
+              id: `group-${groups.length}`,
+              customers: currentGroup,
+              centroid
+            });
+          }
+          currentGroup = [customer];
+          lastHouseNumber = houseNumber;
+        }
+      });
+      
+      // Add final group
+      if (currentGroup.length > 0) {
+        const centroid = {
+          lat: currentGroup.reduce((sum, p) => sum + p.lat, 0) / currentGroup.length,
+          lng: currentGroup.reduce((sum, p) => sum + p.lng, 0) / currentGroup.length
+        };
+        groups.push({
+          id: `group-${groups.length}`,
+          customers: currentGroup,
+          centroid
+        });
+      }
+    }
+  });
+  
+  console.log(`Identified ${groups.length} street-based groups from ${points.length} customers`);
+  groups.forEach((group, index) => {
+    if (group.customers.length > 1) {
+      const addresses = group.customers.map(c => c.data.address).join(', ');
+      console.log(`Street group ${index + 1}: ${group.customers.length} customers on same street - ${addresses}`);
+    }
+  });
+  
   return groups;
 };
 
@@ -102,36 +168,36 @@ export const clusterCustomers = (customers: any[], numDays: number, homeBase?: {
     }));
   }
 
-  // First, identify house groups (customers close enough for one vehicle stop)
-  const houseGroups = identifyHouseGroups(points);
+  // First, identify street groups (customers on same street that are walkable)
+  const streetGroups = identifyStreetGroups(points);
 
-  // Start with geographic K-means clustering using house groups as units
-  let clusters = performKMeansClusteringWithGroups(houseGroups, numDays, homeBase);
+  // Start with geographic K-means clustering using street groups as units
+  let clusters = performKMeansClusteringWithGroups(streetGroups, numDays, homeBase);
   
   // Balance clusters by total drive time rather than just customer count
-  clusters = balanceClustersByDriveTimeWithGroups(clusters, houseGroups, homeBase);
+  clusters = balanceClustersByDriveTimeWithGroups(clusters, streetGroups, homeBase);
   
   return clusters;
 };
 
-// Perform K-means clustering using house groups as units
-const performKMeansClusteringWithGroups = (houseGroups: HouseGroup[], numDays: number, homeBase?: { lat: number; lng: number }): Cluster[] => {
-  // Use house group centroids for clustering
-  const groupPoints: Point[] = houseGroups.map(group => ({
+// Perform K-means clustering using street groups as units
+const performKMeansClusteringWithGroups = (streetGroups: HouseGroup[], numDays: number, homeBase?: { lat: number; lng: number }): Cluster[] => {
+  // Use street group centroids for clustering
+  const groupPoints: Point[] = streetGroups.map(group => ({
     id: group.id,
     lat: group.centroid.lat,
     lng: group.centroid.lng,
-    data: group // Store the entire house group
+    data: group // Store the entire street group
   }));
 
   const clusters = performKMeansClustering(groupPoints, numDays, homeBase);
   
-  // Expand clusters to include all customers from house groups
+  // Expand clusters to include all customers from street groups
   return clusters.map(cluster => ({
     ...cluster,
     points: cluster.points.flatMap(groupPoint => {
-      const houseGroup = groupPoint.data as HouseGroup;
-      return houseGroup.customers;
+      const streetGroup = groupPoint.data as HouseGroup;
+      return streetGroup.customers;
     })
   }));
 };

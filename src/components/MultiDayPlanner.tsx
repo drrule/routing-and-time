@@ -173,30 +173,69 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansCha
     });
   };
 
-  // Identify customer groups (house groups within walking distance)
+  // Identify customer groups (customers on same street within walking distance)
   const identifyCustomerGroups = (customers: Customer[]): Customer[][] => {
-    const HOUSE_GROUP_DISTANCE = 0.1; // miles (increased - roughly 6-8 houses)
-    const groups: Customer[][] = [];
-    const used = new Set<string>();
+    // Parse address to extract street info
+    const parseAddress = (address: string) => {
+      const normalized = address.toLowerCase().trim();
+      const match = normalized.match(/^(\d+)\s+(.+?)(?:\s*,|$)/);
+      if (!match) return null;
+      
+      const houseNumber = parseInt(match[1]);
+      let streetName = match[2]
+        .replace(/^(north|south|east|west|n|s|e|w)\s+/i, '')
+        .replace(/\s+(north|south|east|west|n|s|e|w)$/i, '')
+        .replace(/\s+(st|street|ave|avenue|rd|road|dr|drive|ln|lane|blvd|boulevard|ct|court|pl|place|way|cir|circle)$/i, '')
+        .trim();
+      
+      return { houseNumber, streetName };
+    };
 
+    const streetMap = new Map<string, Customer[]>();
+    
+    // Group customers by street name
     customers.forEach(customer => {
-      if (used.has(customer.id)) return;
-
-      const group: Customer[] = [customer];
-      used.add(customer.id);
-
-      // Find all other customers within house group distance
-      customers.forEach(otherCustomer => {
-        if (used.has(otherCustomer.id)) return;
-        
-        const distance = calculateDistance(customer.lat, customer.lng, otherCustomer.lat, otherCustomer.lng);
-        if (distance <= HOUSE_GROUP_DISTANCE) {
-          group.push(otherCustomer);
-          used.add(otherCustomer.id);
+      const parsed = parseAddress(customer.address);
+      if (parsed) {
+        const key = parsed.streetName;
+        if (!streetMap.has(key)) {
+          streetMap.set(key, []);
         }
-      });
-
-      groups.push(group);
+        streetMap.get(key)!.push(customer);
+      }
+    });
+    
+    const groups: Customer[][] = [];
+    
+    // For each street, create walking groups
+    streetMap.forEach((streetCustomers, streetName) => {
+      if (streetCustomers.length === 1) {
+        groups.push(streetCustomers);
+      } else {
+        // Sort by house number and group nearby addresses
+        const sorted = streetCustomers
+          .map(customer => ({ customer, parsed: parseAddress(customer.address) }))
+          .filter(item => item.parsed)
+          .sort((a, b) => a.parsed!.houseNumber - b.parsed!.houseNumber);
+        
+        let currentGroup: Customer[] = [];
+        let lastHouseNumber = -1;
+        
+        sorted.forEach(({ customer, parsed }) => {
+          const houseNumber = parsed!.houseNumber;
+          
+          if (currentGroup.length === 0 || Math.abs(houseNumber - lastHouseNumber) <= 10) {
+            currentGroup.push(customer);
+            lastHouseNumber = houseNumber;
+          } else {
+            if (currentGroup.length > 0) groups.push([...currentGroup]);
+            currentGroup = [customer];
+            lastHouseNumber = houseNumber;
+          }
+        });
+        
+        if (currentGroup.length > 0) groups.push([...currentGroup]);
+      }
     });
 
     return groups;
