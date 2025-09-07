@@ -353,25 +353,28 @@ const RouteOptimizer = ({ customers, homeBase, onOptimize }: RouteOptimizerProps
                       <p className={`font-medium ${customer.completed ? 'line-through text-muted-foreground' : ''}`}>
                         {customer.name}
                       </p>
-                      <div className="flex items-center gap-2">
-                        <p className={`text-sm text-muted-foreground ${customer.completed ? 'line-through' : ''}`}>
-                          {customer.address}
-                        </p>
-                        <button
-                          onClick={() => copyAddress(customer.address, customer.name)}
-                          className="p-1 rounded hover:bg-muted/50 transition-colors group"
-                          title="Copy address"
-                        >
-                          <Copy className="h-3 w-3 text-muted-foreground group-hover:text-primary" />
-                        </button>
-                      </div>
+                      <p className={`text-sm text-muted-foreground ${customer.completed ? 'line-through' : ''}`}>
+                        {customer.address}
+                      </p>
                     </div>
                   </div>
                   
                   <div className="flex items-center space-x-2">
-                    <Badge className={getStatusColor(customer.completed)}>
-                      {customer.completed ? 'Done' : 'Todo'}
-                    </Badge>
+                    {customer.completed ? (
+                      <Badge className={getStatusColor(customer.completed)}>
+                        Done
+                      </Badge>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => copyAddress(customer.address, customer.name)}
+                        className="h-8 px-3"
+                      >
+                        <Copy className="h-4 w-4 mr-1" />
+                        Copy
+                      </Button>
+                    )}
                   </div>
                 </div>
                 ))}
