@@ -57,6 +57,7 @@ const parseAddress = (address: string) => {
 // Identify customers on the same street who could be serviced in one stop
 const identifyStreetGroups = (points: Point[]): HouseGroup[] => {
   const streetMap = new Map<string, Point[]>();
+  const ungroupedCustomers: Point[] = [];
   
   // Group customers by street name
   points.forEach(point => {
@@ -67,10 +68,23 @@ const identifyStreetGroups = (points: Point[]): HouseGroup[] => {
         streetMap.set(key, []);
       }
       streetMap.get(key)!.push(point);
+    } else {
+      // Customers without parseable addresses become individual groups
+      ungroupedCustomers.push(point);
+      console.log(`Customer with unparseable address: ${point.data.name} - ${point.data.address}`);
     }
   });
   
   const groups: HouseGroup[] = [];
+  
+  // Add ungrouped customers as individual groups first
+  ungroupedCustomers.forEach(customer => {
+    groups.push({
+      id: `group-${groups.length}`,
+      customers: [customer],
+      centroid: { lat: customer.lat, lng: customer.lng }
+    });
+  });
   
   // For each street, create walking groups
   streetMap.forEach((streetCustomers, streetName) => {
@@ -137,7 +151,49 @@ const identifyStreetGroups = (points: Point[]): HouseGroup[] => {
     }
   });
   
+  // Verify no duplicates and all customers are accounted for
+  const totalCustomersInGroups = groups.reduce((sum, group) => sum + group.customers.length, 0);
   console.log(`Identified ${groups.length} street-based groups from ${points.length} customers`);
+  console.log(`Total customers in groups: ${totalCustomersInGroups}, Original customers: ${points.length}`);
+  
+  if (totalCustomersInGroups !== points.length) {
+    console.error(`DUPLICATE DETECTION: Mismatch in customer count! Groups have ${totalCustomersInGroups} customers but input had ${points.length}`);
+    
+    // Find duplicates
+    const allGroupCustomerIds = new Set();
+    const duplicateIds = new Set();
+    
+    groups.forEach(group => {
+      group.customers.forEach(customer => {
+        if (allGroupCustomerIds.has(customer.id)) {
+          duplicateIds.add(customer.id);
+          console.error(`DUPLICATE FOUND: Customer ${customer.id} (${customer.data.name}) appears in multiple groups`);
+        }
+        allGroupCustomerIds.add(customer.id);
+      });
+    });
+    
+    // Remove duplicates - keep only first occurrence
+    if (duplicateIds.size > 0) {
+      const seenIds = new Set();
+      groups.forEach(group => {
+        group.customers = group.customers.filter(customer => {
+          if (seenIds.has(customer.id)) {
+            console.log(`Removing duplicate: ${customer.id} from group ${group.id}`);
+            return false;
+          }
+          seenIds.add(customer.id);
+          return true;
+        });
+      });
+      
+      // Remove empty groups after deduplication
+      const nonEmptyGroups = groups.filter(group => group.customers.length > 0);
+      console.log(`After deduplication: ${nonEmptyGroups.length} groups with ${nonEmptyGroups.reduce((sum, group) => sum + group.customers.length, 0)} customers`);
+      return nonEmptyGroups;
+    }
+  }
+  
   groups.forEach((group, index) => {
     if (group.customers.length > 1) {
       const addresses = group.customers.map(c => c.data.address).join(', ');
