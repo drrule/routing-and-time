@@ -266,7 +266,7 @@ const performKMeansClustering = (points: Point[], numDays: number, homeBase?: { 
 
   let clusters: Cluster[] = [];
   let iterations = 0;
-  const maxIterations = 20; // Reduced for performance with large datasets
+  const maxIterations = 50; // Increased for better convergence
 
   do {
     // Assign points to nearest centroid
@@ -276,20 +276,50 @@ const performKMeansClustering = (points: Point[], numDays: number, homeBase?: { 
       points: []
     }));
 
-    // Assign each point to the nearest cluster
+    // Assign each point to the nearest cluster, but consider work time balance
     points.forEach(point => {
-      let minDistance = Infinity;
+      let minScore = Infinity;
       let nearestClusterIndex = 0;
 
       centroids.forEach((centroid, index) => {
         const distance = calculateDistance(point.lat, point.lng, centroid.lat, centroid.lng);
-        if (distance < minDistance) {
-          minDistance = distance;
+        
+        // Calculate current work time for this cluster
+        const currentWorkTime = clusters[index].points.reduce((sum, p) => 
+          sum + (p.data.estimatedWorkTime || 60), 0);
+        
+        // Score combines distance and work time balance
+        // Penalize clusters that are already heavy with work
+        const workTimePenalty = Math.max(0, currentWorkTime - 300) / 100; // Penalty after 5 hours
+        const score = distance + workTimePenalty;
+        
+        if (score < minScore) {
+          minScore = score;
           nearestClusterIndex = index;
         }
       });
 
       clusters[nearestClusterIndex].points.push(point);
+    });
+
+    // Ensure no empty clusters by redistributing
+    const emptyClusters = clusters.filter(c => c.points.length === 0);
+    const populatedClusters = clusters.filter(c => c.points.length > 0);
+    
+    emptyClusters.forEach(emptyCluster => {
+      if (populatedClusters.length > 0) {
+        // Find the cluster with the most work time
+        const heaviest = populatedClusters.reduce((max, cluster) => {
+          const maxWorkTime = cluster.points.reduce((sum, p) => sum + (p.data.estimatedWorkTime || 60), 0);
+          const currentWorkTime = max.points.reduce((sum, p) => sum + (p.data.estimatedWorkTime || 60), 0);
+          return maxWorkTime > currentWorkTime ? cluster : max;
+        });
+        
+        if (heaviest.points.length > 1) {
+          const pointToMove = heaviest.points.pop()!;
+          emptyCluster.points.push(pointToMove);
+        }
+      }
     });
 
     // Update centroids
@@ -308,7 +338,7 @@ const performKMeansClustering = (points: Point[], numDays: number, homeBase?: { 
     const converged = centroids.every((centroid, index) => {
       const newCentroid = newCentroids[index];
       const distance = calculateDistance(centroid.lat, centroid.lng, newCentroid.lat, newCentroid.lng);
-      return distance < 0.1; // Looser convergence for performance
+      return distance < 0.05; // Tighter convergence
     });
 
     centroids = newCentroids;
@@ -318,6 +348,8 @@ const performKMeansClustering = (points: Point[], numDays: number, homeBase?: { 
       break;
     }
   } while (true);
+
+  return clusters;
 
   return clusters;
 };
@@ -405,26 +437,46 @@ const balanceClustersByWorkTimeWithGroups = (clusters: Cluster[], houseGroups: H
     balanced = true;
     attempts++;
 
-    for (let i = 0; i < clusters.length; i++) {
-      const clusterWorkTime = calculateClusterWorkTime(clusters[i], homeBase);
+    // Calculate current imbalance
+    const workTimes = clusters.map(cluster => calculateClusterWorkTime(cluster, homeBase));
+    const maxWorkTime = Math.max(...workTimes);
+    const minWorkTime = Math.min(...workTimes);
+    const imbalance = maxWorkTime - minWorkTime;
+    
+    console.log(`Balancing attempt ${attempts}: max=${maxWorkTime.toFixed(1)}, min=${minWorkTime.toFixed(1)}, imbalance=${imbalance.toFixed(1)}`);
+
+    // Find the most overloaded cluster
+    const heaviestIndex = workTimes.indexOf(maxWorkTime);
+    const lightestIndex = workTimes.indexOf(minWorkTime);
+    
+    if (imbalance > tolerance * 2) { // Only move if significant imbalance
+      const groupToMove = findBestHouseGroupToMoveByWorkTime(
+        clusters[heaviestIndex], 
+        clusters, 
+        houseGroups, 
+        homeBase, 
+        'lighten'
+      );
       
-      if (clusterWorkTime > targetWorkTimePerDay + tolerance) {
-        // This cluster is too heavy, try to move a house group to a lighter cluster
-        const groupToMove = findBestHouseGroupToMoveByWorkTime(clusters[i], clusters, houseGroups, homeBase, 'lighten');
-        if (groupToMove) {
-          moveHouseGroupBetweenClusters(clusters, i, groupToMove.targetCluster, groupToMove.houseGroup, houseGroups);
+      if (groupToMove && groupToMove.targetCluster === lightestIndex) {
+        moveHouseGroupBetweenClusters(clusters, heaviestIndex, lightestIndex, groupToMove.houseGroup, houseGroups);
+        balanced = false;
+        const groupWorkTime = groupToMove.houseGroup.customers.reduce((sum, c) => sum + (c.data?.estimatedWorkTime || 60), 0);
+        console.log(`Moved house group (${groupWorkTime} min) from day ${heaviestIndex + 1} to day ${lightestIndex + 1}`);
+      } else {
+        // Try moving individual customers if no good house group move found
+        const customerToMove = findBestCustomerToMoveByWorkTime(
+          clusters[heaviestIndex],
+          clusters,
+          homeBase,
+          'lighten'
+        );
+        
+        if (customerToMove && customerToMove.targetCluster === lightestIndex) {
+          moveCustomerBetweenClusters(clusters, heaviestIndex, lightestIndex, customerToMove.customer);
           balanced = false;
-          const groupWorkTime = groupToMove.houseGroup.customers.reduce((sum, c) => sum + (c.data?.estimatedWorkTime || 60), 0);
-          console.log(`Moved house group (${groupToMove.houseGroup.customers.length} customers, ${groupWorkTime} min) from day ${i + 1} to ${groupToMove.targetCluster + 1}`);
-        }
-      } else if (clusterWorkTime < targetWorkTimePerDay - tolerance) {
-        // This cluster is too light, try to get a house group from a heavier cluster
-        const groupToMove = findBestHouseGroupToMoveByWorkTime(clusters[i], clusters, houseGroups, homeBase, 'heavier');
-        if (groupToMove) {
-          moveHouseGroupBetweenClusters(clusters, groupToMove.targetCluster, i, groupToMove.houseGroup, houseGroups);
-          balanced = false;
-          const groupWorkTime = groupToMove.houseGroup.customers.reduce((sum, c) => sum + (c.data?.estimatedWorkTime || 60), 0);
-          console.log(`Moved house group (${groupToMove.houseGroup.customers.length} customers, ${groupWorkTime} min) to day ${i + 1} from ${groupToMove.targetCluster + 1}`);
+          const workTime = customerToMove.customer.data.estimatedWorkTime || 60;
+          console.log(`Moved customer (${workTime} min) from day ${heaviestIndex + 1} to day ${lightestIndex + 1}`);
         }
       }
     }
@@ -611,7 +663,36 @@ const moveHouseGroupBetweenClusters = (
   clusters[toIndex] = updateClusterCentroid(clusters[toIndex]);
 };
 
-// Find best customer to move for balancing
+// Find best customer to move for balancing based on work time
+const findBestCustomerToMoveByWorkTime = (
+  cluster: Cluster, 
+  allClusters: Cluster[], 
+  homeBase: { lat: number; lng: number },
+  direction: 'lighten' | 'heavier'
+): { customer: Point; targetCluster: number } | null => {
+  const currentWorkTime = calculateClusterWorkTime(cluster, homeBase);
+  
+  for (const customer of cluster.points) {
+    const customerWorkTime = customer.data.estimatedWorkTime || 60;
+    
+    for (let i = 0; i < allClusters.length; i++) {
+      if (allClusters[i].id === cluster.id) continue;
+      
+      const targetWorkTime = calculateClusterWorkTime(allClusters[i], homeBase);
+      
+      // Check if this move would improve balance
+      if (direction === 'lighten' && targetWorkTime + customerWorkTime < currentWorkTime - customerWorkTime) {
+        return { customer, targetCluster: i };
+      } else if (direction === 'heavier' && targetWorkTime > currentWorkTime) {
+        return { customer, targetCluster: i };
+      }
+    }
+  }
+  
+  return null;
+};
+
+// Find best customer to move for balancing (legacy drive time version)
 const findBestCustomerToMove = (
   cluster: Cluster, 
   allClusters: Cluster[], 
