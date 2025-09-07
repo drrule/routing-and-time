@@ -50,11 +50,13 @@ const MapView = ({ customers, homeBase, viewMode = 'single', dayPlans = [] }: Ma
     
     for (let dayIndex = 0; dayIndex < dayPlans.length; dayIndex++) {
       const day = dayPlans[dayIndex];
-      if (day.customers.some((c: any) => c.id === customerId)) {
+      const customerIndex = day.customers.findIndex((c: any) => c.id === customerId);
+      if (customerIndex !== -1) {
         return {
           dayIndex,
           dayName: day.dayName,
-          color: dayColors[dayIndex % dayColors.length]
+          color: dayColors[dayIndex % dayColors.length],
+          positionInDay: customerIndex + 1 // 1-based numbering for each day
         };
       }
     }
@@ -236,21 +238,27 @@ const MapView = ({ customers, homeBase, viewMode = 'single', dayPlans = [] }: Ma
         font-size: 14px;
         cursor: pointer;
       `;
-      markerEl.textContent = (index + 1).toString();
+      // Set marker number based on view mode
+      const markerDayInfo = getCustomerDayInfo(customer.id);
+      const markerNumber = viewMode === 'multi' && markerDayInfo 
+        ? markerDayInfo.positionInDay 
+        : index + 1;
+      
+      markerEl.textContent = markerNumber.toString();
 
       // Create popup with day information
-      const dayInfo = getCustomerDayInfo(customer.id);
-      const dayText = viewMode === 'multi' && dayInfo 
-        ? `<p style="margin: 0 0 4px 0; font-size: 12px; color: ${dayInfo.color}; font-weight: bold;">📅 ${dayInfo.dayName}</p>`
+      const popupDayInfo = getCustomerDayInfo(customer.id);
+      const dayText = viewMode === 'multi' && popupDayInfo 
+        ? `<p style="margin: 0 0 4px 0; font-size: 12px; color: ${popupDayInfo.color}; font-weight: bold;">📅 ${popupDayInfo.dayName}</p>`
         : '';
       
       const statusText = customer.completed 
         ? 'COMPLETED'
-        : (viewMode === 'multi' && dayInfo ? dayInfo.dayName.toUpperCase() : 'NOT COMPLETED');
+        : (viewMode === 'multi' && popupDayInfo ? popupDayInfo.dayName.toUpperCase() : 'NOT COMPLETED');
       
       const statusColor = customer.completed 
         ? '#10b981' 
-        : (dayInfo ? dayInfo.color : '#6b7280');
+        : (popupDayInfo ? popupDayInfo.color : '#6b7280');
 
       const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(`
         <div style="padding: 8px;">
