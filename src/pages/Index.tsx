@@ -17,6 +17,7 @@ const Index = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [homeBase, setHomeBase] = useState<HomeBase | null>(null);
   const [viewMode, setViewMode] = useState<'single' | 'multi'>('single');
+  const [dayPlans, setDayPlans] = useState<any[]>([]);
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -57,13 +58,18 @@ const Index = () => {
             {viewMode === 'single' ? (
               <RouteOptimizer customers={customers} homeBase={homeBase} onOptimize={setCustomers} />
             ) : (
-              <MultiDayPlanner customers={customers} homeBase={homeBase} onUpdateCustomers={setCustomers} />
+              <MultiDayPlanner 
+                customers={customers} 
+                homeBase={homeBase} 
+                onUpdateCustomers={setCustomers}
+                onDayPlansChange={setDayPlans}
+              />
             )}
           </div>
           
           {/* Map View */}
           <div>
-            <MapView customers={customers} homeBase={homeBase} />
+            <MapView customers={customers} homeBase={homeBase} viewMode={viewMode} dayPlans={dayPlans} />
           </div>
         </div>
       </main>

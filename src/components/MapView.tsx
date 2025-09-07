@@ -23,17 +23,55 @@ interface HomeBase {
 interface MapViewProps {
   customers: Customer[];
   homeBase: HomeBase | null;
+  viewMode?: 'single' | 'multi';
+  dayPlans?: any[];
 }
 
-const MapView = ({ customers, homeBase }: MapViewProps) => {
+const MapView = ({ customers, homeBase, viewMode = 'single', dayPlans = [] }: MapViewProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const markers = useRef<mapboxgl.Marker[]>([]);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
 
-  const getStatusColor = (completed: boolean) => {
-    return completed ? '#10b981' : '#6b7280'; // green if completed, gray if not
+  // Day colors for multi-day view
+  const dayColors = [
+    '#3b82f6', // blue
+    '#10b981', // green  
+    '#f59e0b', // amber
+    '#ef4444', // red
+    '#8b5cf6', // violet
+    '#06b6d4', // cyan
+    '#f97316'  // orange
+  ];
+
+  const getCustomerDayInfo = (customerId: string) => {
+    if (viewMode !== 'multi' || dayPlans.length === 0) return null;
+    
+    for (let dayIndex = 0; dayIndex < dayPlans.length; dayIndex++) {
+      const day = dayPlans[dayIndex];
+      if (day.customers.some((c: any) => c.id === customerId)) {
+        return {
+          dayIndex,
+          dayName: day.dayName,
+          color: dayColors[dayIndex % dayColors.length]
+        };
+      }
+    }
+    return null;
+  };
+
+  const getStatusColor = (customer: Customer) => {
+    if (customer.completed) {
+      return '#10b981'; // green for completed
+    }
+    
+    if (viewMode === 'multi') {
+      const dayInfo = getCustomerDayInfo(customer.id);
+      return dayInfo ? dayInfo.color : '#6b7280'; // gray if not assigned
+    }
+    
+    return '#6b7280'; // gray for single day mode
   };
 
   useEffect(() => {
@@ -122,7 +160,9 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
       hasMap: !!map.current, 
       mapLoaded, 
       customerCount: customers.length,
-      hasHomeBase: !!homeBase 
+      hasHomeBase: !!homeBase,
+      viewMode,
+      dayPlansCount: dayPlans.length
     });
     
     if (!map.current || !mapLoaded) {
@@ -185,7 +225,7 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
         width: 32px;
         height: 32px;
         border-radius: 50%;
-        background-color: ${getStatusColor(customer.completed)};
+        background-color: ${getStatusColor(customer)};
         border: 3px solid white;
         box-shadow: 0 2px 6px rgba(0,0,0,0.3);
         display: flex;
@@ -198,14 +238,28 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
       `;
       markerEl.textContent = (index + 1).toString();
 
-      // Create popup
+      // Create popup with day information
+      const dayInfo = getCustomerDayInfo(customer.id);
+      const dayText = viewMode === 'multi' && dayInfo 
+        ? `<p style="margin: 0 0 4px 0; font-size: 12px; color: ${dayInfo.color}; font-weight: bold;">📅 ${dayInfo.dayName}</p>`
+        : '';
+      
+      const statusText = customer.completed 
+        ? 'COMPLETED'
+        : (viewMode === 'multi' && dayInfo ? dayInfo.dayName.toUpperCase() : 'NOT COMPLETED');
+      
+      const statusColor = customer.completed 
+        ? '#10b981' 
+        : (dayInfo ? dayInfo.color : '#6b7280');
+
       const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(`
         <div style="padding: 8px;">
           <h3 style="margin: 0 0 4px 0; font-weight: bold;">${customer.name}</h3>
           <p style="margin: 0 0 4px 0; color: #666; font-size: 14px;">${customer.address}</p>
+          ${dayText}
           <p style="margin: 0; font-size: 12px;">
-            <span style="color: ${getStatusColor(customer.completed)}; font-weight: bold;">
-              ${customer.completed ? 'COMPLETED' : 'NOT COMPLETED'}
+            <span style="color: ${statusColor}; font-weight: bold;">
+              ${statusText}
             </span>
           </p>
         </div>
@@ -299,7 +353,7 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
         addOrUpdateRoute();
       }
     }
-  }, [customers, homeBase, mapLoaded]);
+  }, [customers, homeBase, mapLoaded, viewMode, dayPlans]);
 
   return (
     <Card className="h-full shadow-[var(--shadow-medium)]">
@@ -307,7 +361,12 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
         <CardTitle className="flex items-center gap-2">
           <Map className="h-5 w-5 text-primary" />
           Route Map
-          {customers.length > 0 && (
+          {viewMode === 'multi' && dayPlans.length > 0 && (
+            <span className="text-sm font-normal text-muted-foreground">
+              ({dayPlans.length} days planned)
+            </span>
+          )}
+          {viewMode === 'single' && customers.length > 0 && (
             <span className="text-sm font-normal text-muted-foreground">
               ({customers.length} stops)
             </span>

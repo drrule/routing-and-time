@@ -26,9 +26,10 @@ interface MultiDayPlannerProps {
   customers: Customer[];
   homeBase: HomeBase | null;
   onUpdateCustomers: (customers: Customer[]) => void;
+  onDayPlansChange: (dayPlans: DayPlan[]) => void;
 }
 
-const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers }: MultiDayPlannerProps) => {
+const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansChange }: MultiDayPlannerProps) => {
   const [numDays, setNumDays] = useState(3);
   const [dayPlans, setDayPlans] = useState<DayPlan[]>([]);
   const [draggedCustomer, setDraggedCustomer] = useState<Customer | null>(null);
@@ -80,6 +81,7 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers }: MultiDayPla
     });
 
     setDayPlans(plans.filter(plan => plan.customers.length > 0));
+    onDayPlansChange(plans.filter(plan => plan.customers.length > 0));
   };
 
   const calculateDayDistance = (dayCustomers: Customer[]): number => {
@@ -148,6 +150,7 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers }: MultiDayPla
     }));
     
     setDayPlans(optimizedPlans);
+    onDayPlansChange(optimizedPlans);
     
     toast({
       title: "Routes Optimized! 🎯",
@@ -209,6 +212,7 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers }: MultiDayPla
     });
 
     setDayPlans(updatedPlans);
+    onDayPlansChange(updatedPlans);
     setDraggedCustomer(null);
     setDragOverDay(null);
 
