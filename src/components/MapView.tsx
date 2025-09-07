@@ -297,68 +297,169 @@ const MapView = ({ customers, homeBase, viewMode = 'single', dayPlans = [] }: Ma
       map.current.setZoom(14);
     }
 
-    // Add route line connecting home base to all stops and back
+    // Add route lines
     if (customers.length > 0) {
-      let coordinates = customers.map(customer => [customer.lng, customer.lat]);
-      
-      // Add home base at start and end if set
-      if (homeBase) {
-        coordinates = [[homeBase.lng, homeBase.lat], ...coordinates, [homeBase.lng, homeBase.lat]];
-      }
-      
-      // Only add source if map style is loaded (robust)
-      if (mapLoaded) {
-        const addOrUpdateRoute = () => {
-          if (!map.current) return;
-          if (!map.current.isStyleLoaded()) {
-            console.log('Style not loaded yet, waiting for idle...');
-            map.current.once('idle', addOrUpdateRoute);
-            return;
+      if (viewMode === 'multi' && dayPlans.length > 0) {
+        // Multi-day mode: draw separate route lines for each day
+        dayPlans.forEach((dayPlan, dayIndex) => {
+          if (dayPlan.customers.length === 0) return;
+          
+          let coordinates = dayPlan.customers.map((customer: any) => [customer.lng, customer.lat]);
+          
+          // Add home base at start and end if set
+          if (homeBase) {
+            coordinates = [[homeBase.lng, homeBase.lat], ...coordinates, [homeBase.lng, homeBase.lat]];
           }
-          try {
-            if (map.current.getSource('route')) {
-              (map.current.getSource('route') as mapboxgl.GeoJSONSource).setData({
-                type: 'Feature',
-                properties: {},
-                geometry: {
-                  type: 'LineString',
-                  coordinates: coordinates
+          
+          const routeSourceId = `route-day-${dayIndex}`;
+          const routeLayerId = `route-day-${dayIndex}`;
+          const dayColor = dayColors[dayIndex % dayColors.length];
+          
+          if (mapLoaded) {
+            const addOrUpdateDayRoute = () => {
+              if (!map.current) return;
+              if (!map.current.isStyleLoaded()) {
+                console.log('Style not loaded yet, waiting for idle...');
+                map.current.once('idle', addOrUpdateDayRoute);
+                return;
+              }
+              try {
+                if (map.current.getSource(routeSourceId)) {
+                  (map.current.getSource(routeSourceId) as mapboxgl.GeoJSONSource).setData({
+                    type: 'Feature',
+                    properties: {},
+                    geometry: {
+                      type: 'LineString',
+                      coordinates: coordinates
+                    }
+                  });
+                } else {
+                  map.current.addSource(routeSourceId, {
+                    type: 'geojson',
+                    data: {
+                      type: 'Feature',
+                      properties: {},
+                      geometry: {
+                        type: 'LineString',
+                        coordinates: coordinates
+                      }
+                    }
+                  });
+
+                  map.current.addLayer({
+                    id: routeLayerId,
+                    type: 'line',
+                    source: routeSourceId,
+                    layout: {
+                      'line-join': 'round',
+                      'line-cap': 'round'
+                    },
+                    paint: {
+                      'line-color': dayColor,
+                      'line-width': 3,
+                      'line-opacity': 0.8
+                    }
+                  });
                 }
-              });
-            } else {
-              map.current.addSource('route', {
-                type: 'geojson',
-                data: {
+              } catch (err) {
+                console.error(`Failed to add/update route for day ${dayIndex}:`, err);
+              }
+            };
+
+            addOrUpdateDayRoute();
+          }
+        });
+
+        // Remove old single-day route if it exists
+        if (map.current && map.current.getSource('route')) {
+          try {
+            if (map.current.getLayer('route')) {
+              map.current.removeLayer('route');
+            }
+            map.current.removeSource('route');
+          } catch (err) {
+            console.log('No single route to remove');
+          }
+        }
+      } else {
+        // Single-day mode: draw one continuous route line
+        let coordinates = customers.map(customer => [customer.lng, customer.lat]);
+        
+        // Add home base at start and end if set
+        if (homeBase) {
+          coordinates = [[homeBase.lng, homeBase.lat], ...coordinates, [homeBase.lng, homeBase.lat]];
+        }
+        
+        // Remove old multi-day routes if they exist
+        if (map.current) {
+          for (let i = 0; i < 7; i++) { // Clean up to 7 days
+            try {
+              if (map.current.getLayer(`route-day-${i}`)) {
+                map.current.removeLayer(`route-day-${i}`);
+              }
+              if (map.current.getSource(`route-day-${i}`)) {
+                map.current.removeSource(`route-day-${i}`);
+              }
+            } catch (err) {
+              // Layer/source doesn't exist, continue
+            }
+          }
+        }
+        
+        // Only add source if map style is loaded (robust)
+        if (mapLoaded) {
+          const addOrUpdateRoute = () => {
+            if (!map.current) return;
+            if (!map.current.isStyleLoaded()) {
+              console.log('Style not loaded yet, waiting for idle...');
+              map.current.once('idle', addOrUpdateRoute);
+              return;
+            }
+            try {
+              if (map.current.getSource('route')) {
+                (map.current.getSource('route') as mapboxgl.GeoJSONSource).setData({
                   type: 'Feature',
                   properties: {},
                   geometry: {
                     type: 'LineString',
                     coordinates: coordinates
                   }
-                }
-              });
-  
-              map.current.addLayer({
-                id: 'route',
-                type: 'line',
-                source: 'route',
-                layout: {
-                  'line-join': 'round',
-                  'line-cap': 'round'
-                },
-                paint: {
-                  'line-color': '#3b82f6',
-                  'line-width': 3,
-                  'line-opacity': 0.7
-                }
-              });
-            }
-          } catch (err) {
-            console.error('Failed to add/update route:', err);
-          }
-        };
+                });
+              } else {
+                map.current.addSource('route', {
+                  type: 'geojson',
+                  data: {
+                    type: 'Feature',
+                    properties: {},
+                    geometry: {
+                      type: 'LineString',
+                      coordinates: coordinates
+                    }
+                  }
+                });
 
-        addOrUpdateRoute();
+                map.current.addLayer({
+                  id: 'route',
+                  type: 'line',
+                  source: 'route',
+                  layout: {
+                    'line-join': 'round',
+                    'line-cap': 'round'
+                  },
+                  paint: {
+                    'line-color': '#3b82f6',
+                    'line-width': 3,
+                    'line-opacity': 0.7
+                  }
+                });
+              }
+            } catch (err) {
+              console.error('Failed to add/update single route:', err);
+            }
+          };
+
+          addOrUpdateRoute();
+        }
       }
     }
   }, [customers, homeBase, mapLoaded, viewMode, dayPlans]);

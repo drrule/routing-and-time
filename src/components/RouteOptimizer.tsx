@@ -114,7 +114,7 @@ const RouteOptimizer = ({ customers, homeBase, onOptimize }: RouteOptimizerProps
 
     // Show optimization results
     toast({
-      title: "Route Optimized! 🎯",
+      title: "Single-Day Route Optimized! 🎯",
       description: `Saved ${savings.toFixed(1)} miles (${savingsPercent.toFixed(1)}%). New route: ${optimizedDistance.toFixed(1)} miles`,
       duration: 5000,
     });

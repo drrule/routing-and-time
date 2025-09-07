@@ -153,7 +153,7 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansCha
     onDayPlansChange(optimizedPlans);
     
     toast({
-      title: "Routes Optimized! 🎯",
+      title: "Multi-Day Routes Optimized! 🎯",
       description: "All day routes have been optimized for shortest distance",
       duration: 3000,
     });
