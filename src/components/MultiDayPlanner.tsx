@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, MapPin, Route, Copy, CheckCircle, MoreVertical, Shuffle } from "lucide-react";
+import { Calendar, MapPin, Route, Copy, CheckCircle, MoreVertical, Shuffle, Plus, Minus } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { clusterCustomers, optimizeDayRoute, calculateDistance } from "@/utils/clustering";
 import { Customer } from "@/components/RouteOptimizer";
@@ -223,6 +223,144 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansCha
     });
   };
 
+  const makeHeavier = (targetDayIndex: number) => {
+    if (!homeBase) return;
+    
+    const targetDay = dayPlans[targetDayIndex];
+    if (!targetDay) return;
+
+    // Find the best customer to move from other days
+    let bestCustomer: Customer | null = null;
+    let bestSourceDayIndex = -1;
+    let bestDistance = Infinity;
+
+    // Calculate centroid of target day for proximity comparison
+    const targetCentroid = calculateDayCentroid(targetDay.customers);
+
+    dayPlans.forEach((sourceDay, sourceDayIndex) => {
+      if (sourceDayIndex === targetDayIndex || sourceDay.customers.length <= 1) return;
+
+      sourceDay.customers.forEach((customer: Customer) => {
+        // Calculate distance from customer to target day centroid
+        const distanceToTarget = calculateDistance(
+          customer.lat, customer.lng,
+          targetCentroid.lat, targetCentroid.lng
+        );
+
+        if (distanceToTarget < bestDistance) {
+          bestDistance = distanceToTarget;
+          bestCustomer = customer;
+          bestSourceDayIndex = sourceDayIndex;
+        }
+      });
+    });
+
+    if (bestCustomer && bestSourceDayIndex !== -1) {
+      moveCustomerBetweenDays(bestCustomer, bestSourceDayIndex, targetDayIndex);
+      toast({
+        title: "Day Made Heavier! ➕",
+        description: `Moved ${bestCustomer.name} to ${targetDay.dayName}`,
+        duration: 2000,
+      });
+    } else {
+      toast({
+        title: "No Optimal Move Found",
+        description: "No suitable customers to move from other days",
+        variant: "destructive",
+        duration: 2000,
+      });
+    }
+  };
+
+  const makeLighter = (sourceDayIndex: number) => {
+    if (!homeBase) return;
+    
+    const sourceDay = dayPlans[sourceDayIndex];
+    if (!sourceDay || sourceDay.customers.length <= 1) {
+      toast({
+        title: "Cannot Make Lighter",
+        description: "Day must have at least 2 customers",
+        variant: "destructive",
+        duration: 2000,
+      });
+      return;
+    }
+
+    // Find the best customer to move to another day
+    let bestCustomer: Customer | null = null;
+    let bestTargetDayIndex = -1;
+    let bestDistance = Infinity;
+
+    sourceDay.customers.forEach((customer: Customer) => {
+      dayPlans.forEach((targetDay, targetDayIndex) => {
+        if (targetDayIndex === sourceDayIndex) return;
+
+        // Calculate distance from customer to target day centroid
+        const targetCentroid = calculateDayCentroid(targetDay.customers);
+        const distanceToTarget = calculateDistance(
+          customer.lat, customer.lng,
+          targetCentroid.lat, targetCentroid.lng
+        );
+
+        if (distanceToTarget < bestDistance) {
+          bestDistance = distanceToTarget;
+          bestCustomer = customer;
+          bestTargetDayIndex = targetDayIndex;
+        }
+      });
+    });
+
+    if (bestCustomer && bestTargetDayIndex !== -1) {
+      moveCustomerBetweenDays(bestCustomer, sourceDayIndex, bestTargetDayIndex);
+      toast({
+        title: "Day Made Lighter! ➖",
+        description: `Moved ${bestCustomer.name} to ${dayPlans[bestTargetDayIndex].dayName}`,
+        duration: 2000,
+      });
+    }
+  };
+
+  const calculateDayCentroid = (dayCustomers: Customer[]) => {
+    if (dayCustomers.length === 0 && homeBase) {
+      return { lat: homeBase.lat, lng: homeBase.lng };
+    }
+    
+    if (dayCustomers.length === 0) {
+      return { lat: 37.210388, lng: -93.297256 }; // Fallback
+    }
+
+    const avgLat = dayCustomers.reduce((sum, customer) => sum + customer.lat, 0) / dayCustomers.length;
+    const avgLng = dayCustomers.reduce((sum, customer) => sum + customer.lng, 0) / dayCustomers.length;
+    
+    return { lat: avgLat, lng: avgLng };
+  };
+
+  const moveCustomerBetweenDays = (customer: Customer, fromDayIndex: number, toDayIndex: number) => {
+    const updatedPlans = [...dayPlans];
+    
+    // Remove from source day
+    updatedPlans[fromDayIndex] = {
+      ...updatedPlans[fromDayIndex],
+      customers: updatedPlans[fromDayIndex].customers.filter((c: Customer) => c.id !== customer.id)
+    };
+
+    // Add to target day
+    updatedPlans[toDayIndex] = {
+      ...updatedPlans[toDayIndex],
+      customers: [...updatedPlans[toDayIndex].customers, customer]
+    };
+
+    // Recalculate distances and optimize both affected days
+    updatedPlans[fromDayIndex].customers = optimizeDayRoute(updatedPlans[fromDayIndex].customers, homeBase!);
+    updatedPlans[fromDayIndex].totalDistance = calculateDayDistance(updatedPlans[fromDayIndex].customers);
+    
+    updatedPlans[toDayIndex].customers = optimizeDayRoute(updatedPlans[toDayIndex].customers, homeBase!);
+    updatedPlans[toDayIndex].totalDistance = calculateDayDistance(updatedPlans[toDayIndex].customers);
+
+    setDayPlans(updatedPlans);
+    onDayPlansChange(updatedPlans);
+  };
+
   const totalCustomers = dayPlans.reduce((sum, plan) => sum + plan.customers.length, 0);
   const totalDistance = dayPlans.reduce((sum, plan) => sum + plan.totalDistance, 0);
 
@@ -373,6 +511,30 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansCha
                     <p className="text-sm">Drop customers here</p>
                   </div>
                 )}
+                
+                {/* Day Controls */}
+                <div className="pt-3 border-t flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => makeHeavier(dayIndex)}
+                    className="flex-1 h-8"
+                    disabled={dayPlans.filter(p => p.customers.length > 0).length <= 1}
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Heavier
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => makeLighter(dayIndex)}
+                    className="flex-1 h-8"
+                    disabled={dayPlan.customers.length <= 1}
+                  >
+                    <Minus className="h-3 w-3 mr-1" />
+                    Lighter
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           ))}
