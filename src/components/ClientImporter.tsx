@@ -7,43 +7,38 @@ import { Input } from "@/components/ui/input";
 import { Upload, FileText, AlertCircle, File, CheckCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
-// City coordinates for Springfield, MO area
-const getCityCoordinates = (city: string, streetAddress: string) => {
-  const cityCoords: { [key: string]: { lat: number; lng: number; radius: number } } = {
-    'Springfield': { lat: 37.2153, lng: -93.2923, radius: 0.02 },
-    'Nixa': { lat: 37.1397, lng: -93.2671, radius: 0.015 },
-    'Ozark': { lat: 37.0201, lng: -93.2057, radius: 0.015 },
-    'Battlefield': { lat: 37.1450, lng: -93.3710, radius: 0.015 },
-    'Freemont Hills': { lat: 37.2500, lng: -93.3200, radius: 0.015 },
-    'Republic': { lat: 37.1197, lng: -93.4788, radius: 0.015 },
-    'Rogersville': { lat: 37.1242, lng: -93.0532, radius: 0.015 },
-    'Willard': { lat: 37.3042, lng: -93.4288, radius: 0.015 },
-    'Strafford': { lat: 37.2731, lng: -93.1140, radius: 0.015 }
-  };
-
-  // Find matching city (case insensitive)
-  const matchedCity = Object.keys(cityCoords).find(
-    c => city.toLowerCase().includes(c.toLowerCase())
-  );
-
-  const baseCoords = matchedCity 
-    ? cityCoords[matchedCity] 
-    : cityCoords['Springfield']; // Default to Springfield
-
-  // Add some randomness within the city bounds but make it more realistic
-  // Use street address hash to make locations consistent for same address
-  const addressHash = streetAddress.split('').reduce((a, b) => {
-    a = ((a << 5) - a) + b.charCodeAt(0);
-    return a & a;
-  }, 0);
-  
-  const randomX = (Math.sin(addressHash) + 1) / 2; // 0-1
-  const randomY = (Math.cos(addressHash * 2) + 1) / 2; // 0-1
-  
-  return {
-    lat: baseCoords.lat + (randomX - 0.5) * baseCoords.radius,
-    lng: baseCoords.lng + (randomY - 0.5) * baseCoords.radius
-  };
+// Mapbox geocoding function for accurate coordinates
+const geocodeAddress = async (address: string) => {
+  try {
+    const mapboxToken = 'pk.eyJ1IjoiZHJydWxlIiwiYSI6ImNtZjBoa2MxdjBvczAycG80cTBzc2NwYzQifQ.pZUX8D7-S-pdu_irVChgvQ';
+    const encodedAddress = encodeURIComponent(address);
+    const geocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodedAddress}.json?access_token=${mapboxToken}&country=US&types=address,poi&proximity=-93.297256,37.210388`;
+    
+    console.log("Geocoding client address:", address);
+    
+    const response = await fetch(geocodeUrl);
+    const data = await response.json();
+    
+    if (data.features && data.features.length > 0) {
+      const [lng, lat] = data.features[0].center;
+      console.log("Mapbox geocoded client coordinates:", { lat, lng });
+      return { lat, lng };
+    } else {
+      console.log("No Mapbox results for client, using fallback");
+      // Fallback to Springfield, MO area with slight randomization
+      return { 
+        lat: 37.210388 + (Math.random() - 0.5) * 0.01, 
+        lng: -93.297256 + (Math.random() - 0.5) * 0.01 
+      };
+    }
+  } catch (error) {
+    console.error('Mapbox geocoding error for client:', error);
+    // Fallback to Springfield, MO area
+    return { 
+      lat: 37.210388 + (Math.random() - 0.5) * 0.01, 
+      lng: -93.297256 + (Math.random() - 0.5) * 0.01 
+    };
+  }
 };
 
 interface Customer {
@@ -68,13 +63,14 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
   const [successMessage, setSuccessMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const parseClientData = (data: string): Customer[] => {
+  const parseClientData = async (data: string): Promise<Customer[]> => {
     console.log("Raw data received:", data);
     const lines = data.trim().split('\n').filter(line => line.trim());
     console.log("Lines after splitting:", lines);
     const customers: Customer[] = [];
 
-    lines.forEach((line, index) => {
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index];
       console.log(`Processing line ${index + 1}:`, line);
       
       // Detect separator - check if line contains tabs first, then fall back to commas
@@ -99,8 +95,8 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
         const priceNum = parseFloat(price.replace(/[$,]/g, '')) || 45;
         const estimatedTime = Math.max(30, Math.min(120, priceNum)); // 30-120 min based on price
         
-        // Get coordinates based on city/area
-        const coords = getCityCoordinates(city, address);
+        // Get accurate coordinates using Mapbox geocoding
+        const coords = await geocodeAddress(fullAddress);
         
         const customer: Customer = {
           id: `imported-${index + 1}`,
@@ -116,7 +112,7 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
       } else {
         console.log(`Skipping line ${index + 1} - not enough parts:`, parts);
       }
-    });
+    }
 
     console.log("Final customers array:", customers);
     return customers;
@@ -140,7 +136,7 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
     reader.readAsText(file);
   };
 
-  const handleImport = () => {
+  const handleImport = async () => {
     try {
       setIsLoading(true);
       setError("");
@@ -153,7 +149,7 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
       }
 
       console.log("Starting import process...");
-      const customers = parseClientData(rawData);
+      const customers = await parseClientData(rawData);
       
       if (customers.length === 0) {
         setError("No valid client data found. Please check your format.");
