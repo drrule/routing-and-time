@@ -7,6 +7,12 @@ interface Point {
   data: any; // Additional customer data
 }
 
+interface HouseGroup {
+  id: string;
+  customers: Point[];
+  centroid: { lat: number; lng: number };
+}
+
 interface Cluster {
   id: number;
   centroid: { lat: number; lng: number };
@@ -24,6 +30,53 @@ export const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2
     Math.sin(dLng/2) * Math.sin(dLng/2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   return R * c;
+};
+
+// Identify customers close enough to be serviced in one vehicle stop (within ~3 houses)
+const HOUSE_GROUP_DISTANCE = 0.05; // miles (roughly 3-4 houses on a typical street)
+
+const identifyHouseGroups = (points: Point[]): HouseGroup[] => {
+  const groups: HouseGroup[] = [];
+  const used = new Set<string>();
+
+  points.forEach(point => {
+    if (used.has(point.id)) return;
+
+    const group: Point[] = [point];
+    used.add(point.id);
+
+    // Find all other points within house group distance
+    points.forEach(otherPoint => {
+      if (used.has(otherPoint.id)) return;
+      
+      const distance = calculateDistance(point.lat, point.lng, otherPoint.lat, otherPoint.lng);
+      if (distance <= HOUSE_GROUP_DISTANCE) {
+        group.push(otherPoint);
+        used.add(otherPoint.id);
+      }
+    });
+
+    // Calculate centroid of the group
+    const centroid = {
+      lat: group.reduce((sum, p) => sum + p.lat, 0) / group.length,
+      lng: group.reduce((sum, p) => sum + p.lng, 0) / group.length
+    };
+
+    groups.push({
+      id: `group-${groups.length}`,
+      customers: group,
+      centroid
+    });
+  });
+
+  console.log(`Identified ${groups.length} house groups from ${points.length} customers`);
+  groups.forEach((group, index) => {
+    if (group.customers.length > 1) {
+      console.log(`House group ${index + 1}: ${group.customers.length} customers within walking distance`);
+    }
+  });
+
+  return groups;
 };
 
 // Balanced clustering for multi-day route planning considering drive times
@@ -46,13 +99,38 @@ export const clusterCustomers = (customers: any[], numDays: number, homeBase?: {
     }));
   }
 
-  // Start with geographic K-means clustering
-  let clusters = performKMeansClustering(points, numDays, homeBase);
+  // First, identify house groups (customers close enough for one vehicle stop)
+  const houseGroups = identifyHouseGroups(points);
+
+  // Start with geographic K-means clustering using house groups as units
+  let clusters = performKMeansClusteringWithGroups(houseGroups, numDays, homeBase);
   
   // Balance clusters by total drive time rather than just customer count
-  clusters = balanceClustersByDriveTime(clusters, homeBase);
+  clusters = balanceClustersByDriveTimeWithGroups(clusters, houseGroups, homeBase);
   
   return clusters;
+};
+
+// Perform K-means clustering using house groups as units
+const performKMeansClusteringWithGroups = (houseGroups: HouseGroup[], numDays: number, homeBase?: { lat: number; lng: number }): Cluster[] => {
+  // Use house group centroids for clustering
+  const groupPoints: Point[] = houseGroups.map(group => ({
+    id: group.id,
+    lat: group.centroid.lat,
+    lng: group.centroid.lng,
+    data: group // Store the entire house group
+  }));
+
+  const clusters = performKMeansClustering(groupPoints, numDays, homeBase);
+  
+  // Expand clusters to include all customers from house groups
+  return clusters.map(cluster => ({
+    ...cluster,
+    points: cluster.points.flatMap(groupPoint => {
+      const houseGroup = groupPoint.data as HouseGroup;
+      return houseGroup.customers;
+    })
+  }));
 };
 
 // Perform initial K-means clustering
@@ -182,6 +260,52 @@ const getBounds = (points: Point[]) => {
   });
 };
 
+// Balance clusters by total drive time to create even working days (with house groups)
+const balanceClustersByDriveTimeWithGroups = (clusters: Cluster[], houseGroups: HouseGroup[], homeBase?: { lat: number; lng: number }): Cluster[] => {
+  if (!homeBase) return clusters;
+
+  const targetDriveTimePerDay = calculateTotalDriveTime(clusters, homeBase) / clusters.length;
+  const tolerance = targetDriveTimePerDay * 0.15; // Allow 15% variance
+  
+  console.log(`Target drive time per day: ${targetDriveTimePerDay.toFixed(1)} minutes`);
+
+  let balanced = false;
+  let attempts = 0;
+  const maxAttempts = 20;
+
+  while (!balanced && attempts < maxAttempts) {
+    balanced = true;
+    attempts++;
+
+    for (let i = 0; i < clusters.length; i++) {
+      const clusterDriveTime = calculateClusterDriveTime(clusters[i], homeBase);
+      
+      if (clusterDriveTime > targetDriveTimePerDay + tolerance) {
+        // This cluster is too heavy, try to move a house group to a lighter cluster
+        const groupToMove = findBestHouseGroupToMove(clusters[i], clusters, houseGroups, homeBase, 'lighten');
+        if (groupToMove) {
+          moveHouseGroupBetweenClusters(clusters, i, groupToMove.targetCluster, groupToMove.houseGroup, houseGroups);
+          balanced = false;
+          console.log(`Moved house group (${groupToMove.houseGroup.customers.length} customers) from cluster ${i} to ${groupToMove.targetCluster}`);
+        }
+      } else if (clusterDriveTime < targetDriveTimePerDay - tolerance) {
+        // This cluster is too light, try to get a house group from a heavier cluster
+        const groupToMove = findBestHouseGroupToMove(clusters[i], clusters, houseGroups, homeBase, 'heavier');
+        if (groupToMove) {
+          moveHouseGroupBetweenClusters(clusters, groupToMove.targetCluster, i, groupToMove.houseGroup, houseGroups);
+          balanced = false;
+          console.log(`Moved house group (${groupToMove.houseGroup.customers.length} customers) to cluster ${i} from ${groupToMove.targetCluster}`);
+        }
+      }
+    }
+  }
+
+  // Ensure no empty clusters
+  balanceEmptyClusters(clusters);
+  
+  return clusters;
+};
+
 // Balance clusters by total drive time to create even working days
 const balanceClustersByDriveTime = (clusters: Cluster[], homeBase?: { lat: number; lng: number }): Cluster[] => {
   if (!homeBase) return clusters;
@@ -255,6 +379,64 @@ const calculateClusterDriveTime = (cluster: Cluster, homeBase: { lat: number; ln
   totalDriveTime += returnDistance * 2;
 
   return totalDriveTime;
+};
+
+// Find best house group to move for balancing
+const findBestHouseGroupToMove = (
+  cluster: Cluster, 
+  allClusters: Cluster[], 
+  houseGroups: HouseGroup[],
+  homeBase: { lat: number; lng: number },
+  direction: 'lighten' | 'heavier'
+): { houseGroup: HouseGroup; targetCluster: number } | null => {
+  const currentDriveTime = calculateClusterDriveTime(cluster, homeBase);
+  
+  // Find house groups that belong to this cluster
+  const clusterHouseGroups = houseGroups.filter(group => 
+    group.customers.some(customer => 
+      cluster.points.some(point => point.id === customer.id)
+    )
+  );
+
+  for (const houseGroup of clusterHouseGroups) {
+    for (let i = 0; i < allClusters.length; i++) {
+      if (allClusters[i].id === cluster.id) continue;
+      
+      const targetDriveTime = calculateClusterDriveTime(allClusters[i], homeBase);
+      
+      // Check if this move would improve balance
+      if (direction === 'lighten' && targetDriveTime < currentDriveTime) {
+        return { houseGroup, targetCluster: i };
+      } else if (direction === 'heavier' && targetDriveTime > currentDriveTime) {
+        return { houseGroup, targetCluster: i };
+      }
+    }
+  }
+  
+  return null;
+};
+
+// Move entire house group between clusters
+const moveHouseGroupBetweenClusters = (
+  clusters: Cluster[], 
+  fromIndex: number, 
+  toIndex: number, 
+  houseGroup: HouseGroup,
+  allHouseGroups: HouseGroup[]
+) => {
+  // Remove all customers in the house group from source cluster
+  houseGroup.customers.forEach(customer => {
+    clusters[fromIndex].points = clusters[fromIndex].points.filter(p => p.id !== customer.id);
+  });
+  
+  // Add all customers in the house group to target cluster
+  houseGroup.customers.forEach(customer => {
+    clusters[toIndex].points.push(customer);
+  });
+  
+  // Update centroids
+  clusters[fromIndex] = updateClusterCentroid(clusters[fromIndex]);
+  clusters[toIndex] = updateClusterCentroid(clusters[toIndex]);
 };
 
 // Find best customer to move for balancing

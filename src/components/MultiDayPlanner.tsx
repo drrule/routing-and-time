@@ -173,6 +173,200 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansCha
     });
   };
 
+  // Identify customer groups (house groups within walking distance)
+  const identifyCustomerGroups = (customers: Customer[]): Customer[][] => {
+    const HOUSE_GROUP_DISTANCE = 0.05; // miles (roughly 3-4 houses)
+    const groups: Customer[][] = [];
+    const used = new Set<string>();
+
+    customers.forEach(customer => {
+      if (used.has(customer.id)) return;
+
+      const group: Customer[] = [customer];
+      used.add(customer.id);
+
+      // Find all other customers within house group distance
+      customers.forEach(otherCustomer => {
+        if (used.has(otherCustomer.id)) return;
+        
+        const distance = calculateDistance(customer.lat, customer.lng, otherCustomer.lat, otherCustomer.lng);
+        if (distance <= HOUSE_GROUP_DISTANCE) {
+          group.push(otherCustomer);
+          used.add(otherCustomer.id);
+        }
+      });
+
+      groups.push(group);
+    });
+
+    return groups;
+  };
+
+  const moveCustomerGroupBetweenDays = (customers: Customer[], fromDayIndex: number, toDayIndex: number) => {
+    const updatedPlans = [...dayPlans];
+    
+    // Remove customers from source day
+    updatedPlans[fromDayIndex] = {
+      ...updatedPlans[fromDayIndex],
+      customers: updatedPlans[fromDayIndex].customers.filter(c => 
+        !customers.some(groupCustomer => groupCustomer.id === c.id)
+      )
+    };
+
+    // Add customers to target day
+    updatedPlans[toDayIndex] = {
+      ...updatedPlans[toDayIndex],
+      customers: [...updatedPlans[toDayIndex].customers, ...customers]
+    };
+
+    // Recalculate distances and optimize both affected days
+    updatedPlans[fromDayIndex].customers = optimizeDayRoute(updatedPlans[fromDayIndex].customers, homeBase!);
+    updatedPlans[fromDayIndex].totalDistance = calculateDayDistance(updatedPlans[fromDayIndex].customers);
+    
+    updatedPlans[toDayIndex].customers = optimizeDayRoute(updatedPlans[toDayIndex].customers, homeBase!);
+    updatedPlans[toDayIndex].totalDistance = calculateDayDistance(updatedPlans[toDayIndex].customers);
+
+    setDayPlans(updatedPlans);
+    onDayPlansChange(updatedPlans);
+    setHasNewCustomers(false); // Hide re-cluster button after manual adjustment
+  };
+
+  const calculateDayCentroid = (dayCustomers: Customer[]) => {
+    if (dayCustomers.length === 0 && homeBase) {
+      return { lat: homeBase.lat, lng: homeBase.lng };
+    }
+    
+    if (dayCustomers.length === 0) {
+      return { lat: 37.210388, lng: -93.297256 }; // Fallback
+    }
+
+    const avgLat = dayCustomers.reduce((sum, customer) => sum + customer.lat, 0) / dayCustomers.length;
+    const avgLng = dayCustomers.reduce((sum, customer) => sum + customer.lng, 0) / dayCustomers.length;
+    
+    return { lat: avgLat, lng: avgLng };
+  };
+
+  const makeHeavier = (targetDayIndex: number) => {
+    if (!homeBase) return;
+    
+    const targetDay = dayPlans[targetDayIndex];
+    if (!targetDay) return;
+
+    // Find the best house group or individual customer to move from other days
+    let bestMove: { customers: Customer[]; sourceDayIndex: number; distance: number } | null = null;
+    let bestDistance = Infinity;
+
+    // Calculate centroid of target day for proximity comparison
+    const targetCentroid = calculateDayCentroid(targetDay.customers);
+
+    dayPlans.forEach((sourceDay, sourceDayIndex) => {
+      if (sourceDayIndex === targetDayIndex || sourceDay.customers.length <= 1) return;
+
+      // Check for house groups (customers within ~3 houses)
+      const houseGroups = identifyCustomerGroups(sourceDay.customers);
+      
+      houseGroups.forEach(group => {
+        // Calculate distance from group centroid to target day centroid
+        const groupCentroid = {
+          lat: group.reduce((sum, c) => sum + c.lat, 0) / group.length,
+          lng: group.reduce((sum, c) => sum + c.lng, 0) / group.length
+        };
+        
+        const distanceToTarget = calculateDistance(
+          groupCentroid.lat, groupCentroid.lng,
+          targetCentroid.lat, targetCentroid.lng
+        );
+
+        if (distanceToTarget < bestDistance && group.length <= sourceDay.customers.length - 1) {
+          bestDistance = distanceToTarget;
+          bestMove = {
+            customers: group,
+            sourceDayIndex,
+            distance: distanceToTarget
+          };
+        }
+      });
+    });
+
+    if (bestMove) {
+      moveCustomerGroupBetweenDays(bestMove.customers, bestMove.sourceDayIndex, targetDayIndex);
+      const groupSize = bestMove.customers.length;
+      const groupDesc = groupSize > 1 ? `house group (${groupSize} customers)` : bestMove.customers[0].name;
+      toast({
+        title: "Day Made Heavier! ➕",
+        description: `Moved ${groupDesc} to ${targetDay.dayName}`,
+        duration: 2000,
+      });
+    } else {
+      toast({
+        title: "No Optimal Move Found",
+        description: "No suitable customers to move from other days",
+        variant: "destructive",
+        duration: 2000,
+      });
+    }
+  };
+
+  const makeLighter = (sourceDayIndex: number) => {
+    if (!homeBase) return;
+    
+    const sourceDay = dayPlans[sourceDayIndex];
+    if (!sourceDay || sourceDay.customers.length <= 1) {
+      toast({
+        title: "Cannot Make Lighter",
+        description: "Day must have at least 2 customers",
+        variant: "destructive",
+        duration: 2000,
+      });
+      return;
+    }
+
+    // Find the best house group or individual customer to move to another day
+    let bestMove: { customers: Customer[]; targetDayIndex: number; distance: number } | null = null;
+    let bestDistance = Infinity;
+
+    // Check for house groups in source day
+    const houseGroups = identifyCustomerGroups(sourceDay.customers);
+    
+    houseGroups.forEach(group => {
+      const groupCentroid = {
+        lat: group.reduce((sum, c) => sum + c.lat, 0) / group.length,
+        lng: group.reduce((sum, c) => sum + c.lng, 0) / group.length
+      };
+
+      dayPlans.forEach((targetDay, targetDayIndex) => {
+        if (targetDayIndex === sourceDayIndex) return;
+
+        // Calculate distance from group to target day centroid
+        const targetCentroid = calculateDayCentroid(targetDay.customers);
+        const distanceToTarget = calculateDistance(
+          groupCentroid.lat, groupCentroid.lng,
+          targetCentroid.lat, targetCentroid.lng
+        );
+
+        if (distanceToTarget < bestDistance) {
+          bestDistance = distanceToTarget;
+          bestMove = {
+            customers: group,
+            targetDayIndex,
+            distance: distanceToTarget
+          };
+        }
+      });
+    });
+
+    if (bestMove) {
+      moveCustomerGroupBetweenDays(bestMove.customers, sourceDayIndex, bestMove.targetDayIndex);
+      const groupSize = bestMove.customers.length;
+      const groupDesc = groupSize > 1 ? `house group (${groupSize} customers)` : bestMove.customers[0].name;
+      toast({
+        title: "Day Made Lighter! ➖",
+        description: `Moved ${groupDesc} to ${dayPlans[bestMove.targetDayIndex].dayName}`,
+        duration: 2000,
+      });
+    }
+  };
+
   // Drag and drop handlers
   const handleDragStart = (customer: Customer) => {
     setDraggedCustomer(customer);
@@ -204,177 +398,15 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansCha
     }
 
     // Move customer between days
-    const updatedPlans = [...dayPlans];
-    
-    // Remove from source day
-    if (sourceDayIndex !== -1) {
-      updatedPlans[sourceDayIndex] = {
-        ...updatedPlans[sourceDayIndex],
-        customers: updatedPlans[sourceDayIndex].customers.filter(c => c.id !== draggedCustomer.id)
-      };
-    }
-
-    // Add to target day
-    updatedPlans[targetDayIndex] = {
-      ...updatedPlans[targetDayIndex],
-      customers: [...updatedPlans[targetDayIndex].customers, draggedCustomer]
-    };
-
-    // Recalculate distances
-    updatedPlans.forEach(plan => {
-      plan.totalDistance = calculateDayDistance(plan.customers);
-    });
-
-    setDayPlans(updatedPlans);
-    onDayPlansChange(updatedPlans);
-    setHasNewCustomers(false); // Hide re-cluster button after manual move
-    setHasNewCustomers(false); // Hide re-cluster button after manual adjustment
+    moveCustomerGroupBetweenDays([draggedCustomer], sourceDayIndex, targetDayIndex);
     setDraggedCustomer(null);
     setDragOverDay(null);
 
     toast({
       title: "Customer Moved! 🔄",
-      description: `${draggedCustomer.name} moved to ${updatedPlans[targetDayIndex].dayName}`,
+      description: `${draggedCustomer.name} moved to ${dayPlans[targetDayIndex].dayName}`,
       duration: 2000,
     });
-  };
-
-  const makeHeavier = (targetDayIndex: number) => {
-    if (!homeBase) return;
-    
-    const targetDay = dayPlans[targetDayIndex];
-    if (!targetDay) return;
-
-    // Find the best customer to move from other days
-    let bestCustomer: Customer | null = null;
-    let bestSourceDayIndex = -1;
-    let bestDistance = Infinity;
-
-    // Calculate centroid of target day for proximity comparison
-    const targetCentroid = calculateDayCentroid(targetDay.customers);
-
-    dayPlans.forEach((sourceDay, sourceDayIndex) => {
-      if (sourceDayIndex === targetDayIndex || sourceDay.customers.length <= 1) return;
-
-      sourceDay.customers.forEach((customer: Customer) => {
-        // Calculate distance from customer to target day centroid
-        const distanceToTarget = calculateDistance(
-          customer.lat, customer.lng,
-          targetCentroid.lat, targetCentroid.lng
-        );
-
-        if (distanceToTarget < bestDistance) {
-          bestDistance = distanceToTarget;
-          bestCustomer = customer;
-          bestSourceDayIndex = sourceDayIndex;
-        }
-      });
-    });
-
-    if (bestCustomer && bestSourceDayIndex !== -1) {
-      moveCustomerBetweenDays(bestCustomer, bestSourceDayIndex, targetDayIndex);
-      toast({
-        title: "Day Made Heavier! ➕",
-        description: `Moved ${bestCustomer.name} to ${targetDay.dayName}`,
-        duration: 2000,
-      });
-    } else {
-      toast({
-        title: "No Optimal Move Found",
-        description: "No suitable customers to move from other days",
-        variant: "destructive",
-        duration: 2000,
-      });
-    }
-  };
-
-  const makeLighter = (sourceDayIndex: number) => {
-    if (!homeBase) return;
-    
-    const sourceDay = dayPlans[sourceDayIndex];
-    if (!sourceDay || sourceDay.customers.length <= 1) {
-      toast({
-        title: "Cannot Make Lighter",
-        description: "Day must have at least 2 customers",
-        variant: "destructive",
-        duration: 2000,
-      });
-      return;
-    }
-
-    // Find the best customer to move to another day
-    let bestCustomer: Customer | null = null;
-    let bestTargetDayIndex = -1;
-    let bestDistance = Infinity;
-
-    sourceDay.customers.forEach((customer: Customer) => {
-      dayPlans.forEach((targetDay, targetDayIndex) => {
-        if (targetDayIndex === sourceDayIndex) return;
-
-        // Calculate distance from customer to target day centroid
-        const targetCentroid = calculateDayCentroid(targetDay.customers);
-        const distanceToTarget = calculateDistance(
-          customer.lat, customer.lng,
-          targetCentroid.lat, targetCentroid.lng
-        );
-
-        if (distanceToTarget < bestDistance) {
-          bestDistance = distanceToTarget;
-          bestCustomer = customer;
-          bestTargetDayIndex = targetDayIndex;
-        }
-      });
-    });
-
-    if (bestCustomer && bestTargetDayIndex !== -1) {
-      moveCustomerBetweenDays(bestCustomer, sourceDayIndex, bestTargetDayIndex);
-      toast({
-        title: "Day Made Lighter! ➖",
-        description: `Moved ${bestCustomer.name} to ${dayPlans[bestTargetDayIndex].dayName}`,
-        duration: 2000,
-      });
-    }
-  };
-
-  const calculateDayCentroid = (dayCustomers: Customer[]) => {
-    if (dayCustomers.length === 0 && homeBase) {
-      return { lat: homeBase.lat, lng: homeBase.lng };
-    }
-    
-    if (dayCustomers.length === 0) {
-      return { lat: 37.210388, lng: -93.297256 }; // Fallback
-    }
-
-    const avgLat = dayCustomers.reduce((sum, customer) => sum + customer.lat, 0) / dayCustomers.length;
-    const avgLng = dayCustomers.reduce((sum, customer) => sum + customer.lng, 0) / dayCustomers.length;
-    
-    return { lat: avgLat, lng: avgLng };
-  };
-
-  const moveCustomerBetweenDays = (customer: Customer, fromDayIndex: number, toDayIndex: number) => {
-    const updatedPlans = [...dayPlans];
-    
-    // Remove from source day
-    updatedPlans[fromDayIndex] = {
-      ...updatedPlans[fromDayIndex],
-      customers: updatedPlans[fromDayIndex].customers.filter((c: Customer) => c.id !== customer.id)
-    };
-
-    // Add to target day
-    updatedPlans[toDayIndex] = {
-      ...updatedPlans[toDayIndex],
-      customers: [...updatedPlans[toDayIndex].customers, customer]
-    };
-
-    // Recalculate distances and optimize both affected days
-    updatedPlans[fromDayIndex].customers = optimizeDayRoute(updatedPlans[fromDayIndex].customers, homeBase!);
-    updatedPlans[fromDayIndex].totalDistance = calculateDayDistance(updatedPlans[fromDayIndex].customers);
-    
-    updatedPlans[toDayIndex].customers = optimizeDayRoute(updatedPlans[toDayIndex].customers, homeBase!);
-    updatedPlans[toDayIndex].totalDistance = calculateDayDistance(updatedPlans[toDayIndex].customers);
-
-    setDayPlans(updatedPlans);
-    onDayPlansChange(updatedPlans);
   };
 
   const totalCustomers = dayPlans.reduce((sum, plan) => sum + plan.customers.length, 0);
@@ -391,33 +423,33 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansCha
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <label htmlFor="num-days" className="text-sm font-medium">Working Days:</label>
-                <Select value={numDays.toString()} onValueChange={(value) => setNumDays(parseInt(value))}>
-                  <SelectTrigger className="w-20">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {[2, 3, 4, 5, 6, 7].map(num => (
-                      <SelectItem key={num} value={num.toString()}>{num}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              {hasNewCustomers && (
-                <Button onClick={generateDayPlans} variant="outline" size="sm">
-                  <Shuffle className="h-4 w-4 mr-2" />
-                  Re-cluster
-                </Button>
-              )}
-
-              <Button onClick={optimizeDayRoutes} variant="default" size="sm">
-                <Route className="h-4 w-4 mr-2" />
-                Optimize All Routes
-              </Button>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label htmlFor="num-days" className="text-sm font-medium">Working Days:</label>
+              <Select value={numDays.toString()} onValueChange={(value) => setNumDays(parseInt(value))}>
+                <SelectTrigger className="w-20">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[2, 3, 4, 5, 6, 7].map(num => (
+                    <SelectItem key={num} value={num.toString()}>{num}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+            
+            {hasNewCustomers && (
+              <Button onClick={generateDayPlans} variant="outline" size="sm">
+                <Shuffle className="h-4 w-4 mr-2" />
+                Re-cluster
+              </Button>
+            )}
+
+            <Button onClick={optimizeDayRoutes} variant="default" size="sm">
+              <Route className="h-4 w-4 mr-2" />
+              Optimize All Routes
+            </Button>
+          </div>
 
           {/* Summary */}
           {dayPlans.length > 0 && (
