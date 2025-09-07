@@ -175,7 +175,7 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansCha
 
   // Identify customer groups (house groups within walking distance)
   const identifyCustomerGroups = (customers: Customer[]): Customer[][] => {
-    const HOUSE_GROUP_DISTANCE = 0.05; // miles (roughly 3-4 houses)
+    const HOUSE_GROUP_DISTANCE = 0.1; // miles (increased - roughly 6-8 houses)
     const groups: Customer[][] = [];
     const used = new Set<string>();
 

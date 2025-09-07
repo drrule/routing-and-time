@@ -33,7 +33,7 @@ export const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2
 };
 
 // Identify customers close enough to be serviced in one vehicle stop (within ~3 houses)
-const HOUSE_GROUP_DISTANCE = 0.05; // miles (roughly 3-4 houses on a typical street)
+const HOUSE_GROUP_DISTANCE = 0.1; // miles (increased from 0.05 - roughly 6-8 houses)
 
 const identifyHouseGroups = (points: Point[]): HouseGroup[] => {
   const groups: HouseGroup[] = [];
@@ -73,6 +73,9 @@ const identifyHouseGroups = (points: Point[]): HouseGroup[] => {
   groups.forEach((group, index) => {
     if (group.customers.length > 1) {
       console.log(`House group ${index + 1}: ${group.customers.length} customers within walking distance`);
+      group.customers.forEach(customer => {
+        console.log(`  - ${customer.data.name} at ${customer.data.address}`);
+      });
     }
   });
 
