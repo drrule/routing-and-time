@@ -45,8 +45,7 @@ interface Customer {
   id: string;
   name: string;
   address: string;
-  status: 'pending' | 'in-progress' | 'completed';
-  estimatedTime: number;
+  completed: boolean;
   lat: number;
   lng: number;
 }
@@ -79,7 +78,7 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
       console.log("Parts after splitting:", parts);
       
       if (parts.length >= 2) {
-        let name, fullAddress, estimatedTime;
+        let name, fullAddress;
         
         if (parts.length === 4) {
           // Format: Name, Address, City, State
@@ -88,20 +87,14 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
           const city = parts[2] || '';
           const state = parts[3] || '';
           fullAddress = [address, city, state].filter(Boolean).join(', ');
-          estimatedTime = 45; // Default time
         } else if (parts.length >= 7) {
           // Format: Name, Type, Price, Letter, Address, City, State
           const businessType = parts[1] || '';
-          const price = parts[2] || '';
           name = parts[0] || `Customer ${index + 1}`;
           const address = parts[4] || '';
           const city = parts[5] || '';
           const state = parts[6] || '';
           fullAddress = [address, city, state].filter(Boolean).join(', ');
-          
-          // Extract time estimate from price
-          const priceNum = parseFloat(price.replace(/[$,]/g, '')) || 45;
-          estimatedTime = Math.max(30, Math.min(120, priceNum));
           
           // Add business type to name if not residential
           if (businessType && businessType !== 'Residential') {
@@ -111,7 +104,6 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
           // Fallback: treat as Name, Address format
           name = parts[0] || `Customer ${index + 1}`;
           fullAddress = parts.slice(1).join(', ');
-          estimatedTime = 45;
         }
         
         console.log("Parsed address for geocoding:", fullAddress);
@@ -123,8 +115,7 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
           id: `imported-${index + 1}`,
           name: name,
           address: fullAddress || 'Address not provided',
-          status: 'pending',
-          estimatedTime: estimatedTime,
+          completed: false,
           lat: coords.lat,
           lng: coords.lng
         };
@@ -272,11 +263,11 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
               <p className="font-medium text-foreground">Supported formats:</p>
               <div className="space-y-1">
                 <p><strong>📋 Spreadsheet paste:</strong> Copy directly from Google Sheets or Excel</p>
-                <p><strong>📄 CSV format:</strong> Name, Address, Time, Latitude, Longitude</p>
+                <p><strong>📄 CSV format:</strong> Name, Address, City, State</p>
                 <p><strong>🏠 Your format:</strong> Name, Type, Price, Frequency, Address, City, State</p>
               </div>
               <p className="text-xs pt-2 border-t border-muted">
-                💡 Service time estimated from price • Coordinates auto-generated for Springfield, MO area
+                💡 Coordinates auto-generated for accurate mapping
               </p>
             </div>
           </div>

@@ -1,16 +1,15 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { MapPin, Clock, Route, Fuel, CheckCircle2, Navigation, GripVertical } from "lucide-react";
+import { MapPin, Route, Fuel, CheckCircle2, Navigation, GripVertical, CheckCircle } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { useState } from "react";
 
-interface Customer {
+export interface Customer {
   id: string;
   name: string;
   address: string;
-  status: 'pending' | 'in-progress' | 'completed';
-  estimatedTime: number;
+  completed: boolean;
   lat: number;
   lng: number;
 }
@@ -32,15 +31,8 @@ const RouteOptimizer = ({ customers, homeBase, onOptimize }: RouteOptimizerProps
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return 'bg-success text-success-foreground';
-      case 'in-progress':
-        return 'bg-warning text-warning-foreground';
-      default:
-        return 'bg-muted text-muted-foreground';
-    }
+  const getStatusColor = (completed: boolean) => {
+    return completed ? 'bg-success text-success-foreground' : 'bg-muted text-muted-foreground';
   };
 
   // Calculate distance between two points using Haversine formula
@@ -166,8 +158,7 @@ const RouteOptimizer = ({ customers, homeBase, onOptimize }: RouteOptimizerProps
     return totalDistance;
   };
 
-  const totalTime = customers.reduce((acc, customer) => acc + customer.estimatedTime, 0);
-  const completedJobs = customers.filter(c => c.status === 'completed').length;
+  const completedJobs = customers.filter(c => c.completed).length;
   const totalDistance = calculateRouteDistance();
 
   // Drag and drop handlers
@@ -225,10 +216,19 @@ const RouteOptimizer = ({ customers, homeBase, onOptimize }: RouteOptimizerProps
     setDragOverIndex(null);
   };
 
+  const toggleCustomerStatus = (customerId: string) => {
+    const updatedCustomers = customers.map(customer =>
+      customer.id === customerId
+        ? { ...customer, completed: !customer.completed }
+        : customer
+    );
+    onOptimize?.(updatedCustomers);
+  };
+
   return (
     <div className="space-y-6">
-      {/* Route Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      {/* Route Summary - reduced to 3 cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="bg-gradient-to-br from-card to-muted/20 shadow-[var(--shadow-soft)]">
           <CardContent className="p-4">
             <div className="flex items-center space-x-2">
@@ -236,18 +236,6 @@ const RouteOptimizer = ({ customers, homeBase, onOptimize }: RouteOptimizerProps
               <div>
                 <p className="text-sm text-muted-foreground">Total Stops</p>
                 <p className="text-2xl font-bold text-foreground">{customers.length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gradient-to-br from-card to-muted/20 shadow-[var(--shadow-soft)]">
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <Clock className="h-5 w-5 text-primary" />
-              <div>
-                <p className="text-sm text-muted-foreground">Est. Time</p>
-                <p className="text-2xl font-bold text-foreground">{Math.floor(totalTime / 60)}h {totalTime % 60}m</p>
               </div>
             </div>
           </CardContent>
@@ -333,24 +321,29 @@ const RouteOptimizer = ({ customers, homeBase, onOptimize }: RouteOptimizerProps
                     <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground font-semibold text-sm">
                       {index + 1}
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-foreground">{customer.name}</h3>
-                      <div className="flex items-center text-muted-foreground text-sm">
-                        <MapPin className="h-4 w-4 mr-1" />
+                    <button
+                      onClick={() => toggleCustomerStatus(customer.id)}
+                      className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-colors ${
+                        customer.completed 
+                          ? 'bg-success border-success text-white' 
+                          : 'border-muted-foreground hover:border-primary'
+                      }`}
+                    >
+                      {customer.completed && <CheckCircle className="h-4 w-4" />}
+                    </button>
+                    <div className="flex-1">
+                      <p className={`font-medium ${customer.completed ? 'line-through text-muted-foreground' : ''}`}>
+                        {customer.name}
+                      </p>
+                      <p className={`text-sm text-muted-foreground ${customer.completed ? 'line-through' : ''}`}>
                         {customer.address}
-                      </div>
+                      </p>
                     </div>
                   </div>
                   
-                  <div className="flex items-center space-x-4">
-                    <div className="text-right">
-                      <div className="flex items-center text-sm text-muted-foreground">
-                        <Clock className="h-4 w-4 mr-1" />
-                        {customer.estimatedTime}min
-                      </div>
-                    </div>
-                    <Badge className={getStatusColor(customer.status)}>
-                      {customer.status.replace('-', ' ')}
+                  <div className="flex items-center space-x-2">
+                    <Badge className={getStatusColor(customer.completed)}>
+                      {customer.completed ? 'Done' : 'Todo'}
                     </Badge>
                   </div>
                 </div>
@@ -365,4 +358,3 @@ const RouteOptimizer = ({ customers, homeBase, onOptimize }: RouteOptimizerProps
 };
 
 export default RouteOptimizer;
-export type { Customer };

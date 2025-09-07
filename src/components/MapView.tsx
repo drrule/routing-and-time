@@ -8,8 +8,7 @@ interface Customer {
   id: string;
   name: string;
   address: string;
-  status: 'pending' | 'in-progress' | 'completed';
-  estimatedTime: number;
+  completed: boolean;
   lat: number;
   lng: number;
 }
@@ -33,15 +32,8 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return '#10b981'; // green
-      case 'in-progress':
-        return '#f59e0b'; // yellow
-      default:
-        return '#6b7280'; // gray
-    }
+  const getStatusColor = (completed: boolean) => {
+    return completed ? '#10b981' : '#6b7280'; // green if completed, gray if not
   };
 
   useEffect(() => {
@@ -193,7 +185,7 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
         width: 32px;
         height: 32px;
         border-radius: 50%;
-        background-color: ${getStatusColor(customer.status)};
+        background-color: ${getStatusColor(customer.completed)};
         border: 3px solid white;
         box-shadow: 0 2px 6px rgba(0,0,0,0.3);
         display: flex;
@@ -212,9 +204,9 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
           <h3 style="margin: 0 0 4px 0; font-weight: bold;">${customer.name}</h3>
           <p style="margin: 0 0 4px 0; color: #666; font-size: 14px;">${customer.address}</p>
           <p style="margin: 0; font-size: 12px;">
-            <span style="color: ${getStatusColor(customer.status)}; font-weight: bold;">
-              ${customer.status.replace('-', ' ').toUpperCase()}
-            </span> • ${customer.estimatedTime} min
+            <span style="color: ${getStatusColor(customer.completed)}; font-weight: bold;">
+              ${customer.completed ? 'COMPLETED' : 'NOT COMPLETED'}
+            </span>
           </p>
         </div>
       `);
