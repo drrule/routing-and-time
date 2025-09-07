@@ -79,28 +79,49 @@ const ClientImporter = ({ onImport }: ClientImporterProps) => {
       console.log("Parts after splitting:", parts);
       
       if (parts.length >= 2) {
-        // Handle your specific format: Name, Type, Price, Letter, Address, City, State
-        const name = parts[0] || `Customer ${index + 1}`;
-        const businessType = parts[1] || '';
-        const price = parts[2] || '';
-        const frequency = parts[3] || '';
-        const address = parts[4] || '';
-        const city = parts[5] || '';
-        const state = parts[6] || '';
+        let name, fullAddress, estimatedTime;
         
-        // Combine address components
-        const fullAddress = [address, city, state].filter(Boolean).join(', ');
+        if (parts.length === 4) {
+          // Format: Name, Address, City, State
+          name = parts[0] || `Customer ${index + 1}`;
+          const address = parts[1] || '';
+          const city = parts[2] || '';
+          const state = parts[3] || '';
+          fullAddress = [address, city, state].filter(Boolean).join(', ');
+          estimatedTime = 45; // Default time
+        } else if (parts.length >= 7) {
+          // Format: Name, Type, Price, Letter, Address, City, State
+          const businessType = parts[1] || '';
+          const price = parts[2] || '';
+          name = parts[0] || `Customer ${index + 1}`;
+          const address = parts[4] || '';
+          const city = parts[5] || '';
+          const state = parts[6] || '';
+          fullAddress = [address, city, state].filter(Boolean).join(', ');
+          
+          // Extract time estimate from price
+          const priceNum = parseFloat(price.replace(/[$,]/g, '')) || 45;
+          estimatedTime = Math.max(30, Math.min(120, priceNum));
+          
+          // Add business type to name if not residential
+          if (businessType && businessType !== 'Residential') {
+            name = `${name} (${businessType})`;
+          }
+        } else {
+          // Fallback: treat as Name, Address format
+          name = parts[0] || `Customer ${index + 1}`;
+          fullAddress = parts.slice(1).join(', ');
+          estimatedTime = 45;
+        }
         
-        // Extract time estimate from price (default 45 min, or estimate based on price)
-        const priceNum = parseFloat(price.replace(/[$,]/g, '')) || 45;
-        const estimatedTime = Math.max(30, Math.min(120, priceNum)); // 30-120 min based on price
+        console.log("Parsed address for geocoding:", fullAddress);
         
         // Get accurate coordinates using Mapbox geocoding
         const coords = await geocodeAddress(fullAddress);
         
         const customer: Customer = {
           id: `imported-${index + 1}`,
-          name: `${name}${businessType && businessType !== 'Residential' ? ` (${businessType})` : ''}`,
+          name: name,
           address: fullAddress || 'Address not provided',
           status: 'pending',
           estimatedTime: estimatedTime,
