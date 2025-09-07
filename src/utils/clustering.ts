@@ -26,7 +26,7 @@ export const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2
   return R * c;
 };
 
-// K-means clustering for geographic points
+// Balanced clustering for multi-day route planning considering drive times
 export const clusterCustomers = (customers: any[], numDays: number, homeBase?: { lat: number; lng: number }): Cluster[] => {
   if (customers.length === 0 || numDays <= 0) return [];
   
@@ -46,6 +46,17 @@ export const clusterCustomers = (customers: any[], numDays: number, homeBase?: {
     }));
   }
 
+  // Start with geographic K-means clustering
+  let clusters = performKMeansClustering(points, numDays, homeBase);
+  
+  // Balance clusters by total drive time rather than just customer count
+  clusters = balanceClustersByDriveTime(clusters, homeBase);
+  
+  return clusters;
+};
+
+// Perform initial K-means clustering
+const performKMeansClustering = (points: Point[], numDays: number, homeBase?: { lat: number; lng: number }): Cluster[] => {
   // Initialize centroids
   let centroids: { lat: number; lng: number }[] = [];
   
@@ -74,7 +85,7 @@ export const clusterCustomers = (customers: any[], numDays: number, homeBase?: {
 
   let clusters: Cluster[] = [];
   let iterations = 0;
-  const maxIterations = 50;
+  const maxIterations = 20; // Reduced for performance with large datasets
 
   do {
     // Assign points to nearest centroid
@@ -116,7 +127,7 @@ export const clusterCustomers = (customers: any[], numDays: number, homeBase?: {
     const converged = centroids.every((centroid, index) => {
       const newCentroid = newCentroids[index];
       const distance = calculateDistance(centroid.lat, centroid.lng, newCentroid.lat, newCentroid.lng);
-      return distance < 0.01; // Convergence threshold: 0.01 miles
+      return distance < 0.1; // Looser convergence for performance
     });
 
     centroids = newCentroids;
@@ -127,29 +138,11 @@ export const clusterCustomers = (customers: any[], numDays: number, homeBase?: {
     }
   } while (true);
 
-  // Balance clusters to avoid empty days
-  balanceClusters(clusters);
-
   return clusters;
 };
 
-// Get bounding box of all points
-const getBounds = (points: Point[]) => {
-  return points.reduce((bounds, point) => ({
-    minLat: Math.min(bounds.minLat, point.lat),
-    maxLat: Math.max(bounds.maxLat, point.lat),
-    minLng: Math.min(bounds.minLng, point.lng),
-    maxLng: Math.max(bounds.maxLng, point.lng)
-  }), {
-    minLat: Infinity,
-    maxLat: -Infinity,
-    minLng: Infinity,
-    maxLng: -Infinity
-  });
-};
-
-// Balance clusters to ensure no empty days
-const balanceClusters = (clusters: Cluster[]) => {
+// Balance empty clusters (simplified version)
+const balanceEmptyClusters = (clusters: Cluster[]) => {
   // Find empty clusters
   const emptyClusters = clusters.filter(cluster => cluster.points.length === 0);
   const populatedClusters = clusters.filter(cluster => cluster.points.length > 1);
@@ -172,6 +165,156 @@ const balanceClusters = (clusters: Cluster[]) => {
       emptyCluster.centroid = { lat: point.lat, lng: point.lng };
     }
   });
+};
+
+// Get bounding box of all points
+const getBounds = (points: Point[]) => {
+  return points.reduce((bounds, point) => ({
+    minLat: Math.min(bounds.minLat, point.lat),
+    maxLat: Math.max(bounds.maxLat, point.lat),
+    minLng: Math.min(bounds.minLng, point.lng),
+    maxLng: Math.max(bounds.maxLng, point.lng)
+  }), {
+    minLat: Infinity,
+    maxLat: -Infinity,
+    minLng: Infinity,
+    maxLng: -Infinity
+  });
+};
+
+// Balance clusters by total drive time to create even working days
+const balanceClustersByDriveTime = (clusters: Cluster[], homeBase?: { lat: number; lng: number }): Cluster[] => {
+  if (!homeBase) return clusters;
+
+  const targetDriveTimePerDay = calculateTotalDriveTime(clusters, homeBase) / clusters.length;
+  const tolerance = targetDriveTimePerDay * 0.15; // Allow 15% variance
+  
+  console.log(`Target drive time per day: ${targetDriveTimePerDay.toFixed(1)} minutes`);
+
+  let balanced = false;
+  let attempts = 0;
+  const maxAttempts = 20;
+
+  while (!balanced && attempts < maxAttempts) {
+    balanced = true;
+    attempts++;
+
+    for (let i = 0; i < clusters.length; i++) {
+      const clusterDriveTime = calculateClusterDriveTime(clusters[i], homeBase);
+      
+      if (clusterDriveTime > targetDriveTimePerDay + tolerance) {
+        // This cluster is too heavy, try to move a customer to a lighter cluster
+        const customerToMove = findBestCustomerToMove(clusters[i], clusters, homeBase, 'lighten');
+        if (customerToMove) {
+          moveCustomerBetweenClusters(clusters, i, customerToMove.targetCluster, customerToMove.customer);
+          balanced = false;
+          console.log(`Moved customer from cluster ${i} to ${customerToMove.targetCluster} to balance drive time`);
+        }
+      } else if (clusterDriveTime < targetDriveTimePerDay - tolerance) {
+        // This cluster is too light, try to get a customer from a heavier cluster
+        const customerToMove = findBestCustomerToMove(clusters[i], clusters, homeBase, 'heavier');
+        if (customerToMove) {
+          moveCustomerBetweenClusters(clusters, customerToMove.targetCluster, i, customerToMove.customer);
+          balanced = false;
+          console.log(`Moved customer to cluster ${i} from ${customerToMove.targetCluster} to balance drive time`);
+        }
+      }
+    }
+  }
+
+  // Ensure no empty clusters
+  balanceEmptyClusters(clusters);
+  
+  return clusters;
+};
+
+// Calculate total drive time for all clusters
+const calculateTotalDriveTime = (clusters: Cluster[], homeBase: { lat: number; lng: number }): number => {
+  return clusters.reduce((total, cluster) => total + calculateClusterDriveTime(cluster, homeBase), 0);
+};
+
+// Calculate drive time for a single cluster (in minutes)
+const calculateClusterDriveTime = (cluster: Cluster, homeBase: { lat: number; lng: number }): number => {
+  if (cluster.points.length === 0) return 0;
+
+  const optimizedRoute = optimizeDayRoute(cluster.points.map(p => p.data), homeBase);
+  let totalDriveTime = 0;
+  let currentLat = homeBase.lat;
+  let currentLng = homeBase.lng;
+
+  // Calculate drive time for the route
+  for (const customer of optimizedRoute) {
+    const driveDistance = calculateDistance(currentLat, currentLng, customer.lat, customer.lng);
+    totalDriveTime += driveDistance * 2; // Assume 2 minutes per mile (30 mph average with stops)
+    currentLat = customer.lat;
+    currentLng = customer.lng;
+  }
+
+  // Add return trip to home
+  const returnDistance = calculateDistance(currentLat, currentLng, homeBase.lat, homeBase.lng);
+  totalDriveTime += returnDistance * 2;
+
+  return totalDriveTime;
+};
+
+// Find best customer to move for balancing
+const findBestCustomerToMove = (
+  cluster: Cluster, 
+  allClusters: Cluster[], 
+  homeBase: { lat: number; lng: number },
+  direction: 'lighten' | 'heavier'
+): { customer: Point; targetCluster: number } | null => {
+  const currentDriveTime = calculateClusterDriveTime(cluster, homeBase);
+  
+  for (const customer of cluster.points) {
+    for (let i = 0; i < allClusters.length; i++) {
+      if (allClusters[i].id === cluster.id) continue;
+      
+      const targetDriveTime = calculateClusterDriveTime(allClusters[i], homeBase);
+      
+      // Check if this move would improve balance
+      if (direction === 'lighten' && targetDriveTime < currentDriveTime) {
+        return { customer, targetCluster: i };
+      } else if (direction === 'heavier' && targetDriveTime > currentDriveTime) {
+        return { customer, targetCluster: i };
+      }
+    }
+  }
+  
+  return null;
+};
+
+// Move customer between clusters
+const moveCustomerBetweenClusters = (
+  clusters: Cluster[], 
+  fromIndex: number, 
+  toIndex: number, 
+  customer: Point
+) => {
+  // Remove from source cluster
+  clusters[fromIndex].points = clusters[fromIndex].points.filter(p => p.id !== customer.id);
+  
+  // Add to target cluster
+  clusters[toIndex].points.push(customer);
+  
+  // Update centroids
+  clusters[fromIndex] = updateClusterCentroid(clusters[fromIndex]);
+  clusters[toIndex] = updateClusterCentroid(clusters[toIndex]);
+};
+
+// Update cluster centroid
+const updateClusterCentroid = (cluster: Cluster): Cluster => {
+  if (cluster.points.length === 0) {
+    return cluster;
+  }
+  
+  const avgLat = cluster.points.reduce((sum, point) => sum + point.lat, 0) / cluster.points.length;
+  const avgLng = cluster.points.reduce((sum, point) => sum + point.lng, 0) / cluster.points.length;
+  
+  return {
+    ...cluster,
+    centroid: { lat: avgLat, lng: avgLng }
+  };
 };
 
 // Optimize route order within a single day using nearest neighbor
