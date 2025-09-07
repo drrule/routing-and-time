@@ -146,6 +146,7 @@ const MapView = ({ customers, homeBase }: MapViewProps) => {
 
     // Add home base marker if set
     if (homeBase) {
+      console.log("Adding home base marker at coordinates:", homeBase.lat, homeBase.lng, "for address:", homeBase.address);
       const homeMarkerEl = document.createElement('div');
       homeMarkerEl.className = 'home-marker';
       homeMarkerEl.style.cssText = `
