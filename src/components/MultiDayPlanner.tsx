@@ -18,6 +18,7 @@ interface HomeBase {
 interface DayPlan {
   day: number;
   dayName: string;
+  assignedWeekDay: string;
   customers: Customer[];
   totalDistance: number;
 }
@@ -36,8 +37,9 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansCha
   const [dragOverDay, setDragOverDay] = useState<number | null>(null);
   const [hasNewCustomers, setHasNewCustomers] = useState(false);
   const [lastCustomerCount, setLastCustomerCount] = useState(0);
+  const [dayAssignments, setDayAssignments] = useState<{[key: number]: string}>({});
 
-  const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const weekDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
   // Track when new customers are added
   useEffect(() => {
@@ -82,10 +84,13 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansCha
       const dayCustomers = cluster.points.map(point => point.data);
       const optimizedCustomers = optimizeDayRoute(dayCustomers, homeBase);
       const totalDistance = calculateDayDistance(optimizedCustomers);
+      const dayNumber = index + 1;
+      const assignedDay = dayAssignments[dayNumber] || `Day ${dayNumber}`;
 
       return {
-        day: index + 1,
-        dayName: dayNames[index] || `Day ${index + 1}`,
+        day: dayNumber,
+        dayName: `Day ${dayNumber}`,
+        assignedWeekDay: assignedDay,
         customers: optimizedCustomers,
         totalDistance
       };
@@ -124,7 +129,7 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansCha
     navigator.clipboard.writeText(addressList);
     toast({
       title: "Day Plan Copied! 📋",
-      description: `${dayPlan.dayName} addresses copied to clipboard`,
+      description: `${dayPlan.assignedWeekDay} addresses copied to clipboard`,
       duration: 3000,
     });
   };
@@ -333,7 +338,7 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansCha
       const groupDesc = groupSize > 1 ? `house group (${groupSize} customers)` : bestMove.customers[0].name;
       toast({
         title: "Day Made Heavier! ➕",
-        description: `Moved ${groupDesc} to ${targetDay.dayName}`,
+        description: `Moved ${groupDesc} to ${targetDay.assignedWeekDay}`,
         duration: 2000,
       });
     } else {
@@ -400,7 +405,7 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansCha
       const groupDesc = groupSize > 1 ? `house group (${groupSize} customers)` : bestMove.customers[0].name;
       toast({
         title: "Day Made Lighter! ➖",
-        description: `Moved ${groupDesc} to ${dayPlans[bestMove.targetDayIndex].dayName}`,
+        description: `Moved ${groupDesc} to ${dayPlans[bestMove.targetDayIndex].assignedWeekDay}`,
         duration: 2000,
       });
     }
@@ -443,7 +448,7 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansCha
 
     toast({
       title: "Customer Moved! 🔄",
-      description: `${draggedCustomer.name} moved to ${dayPlans[targetDayIndex].dayName}`,
+      description: `${draggedCustomer.name} moved to ${dayPlans[targetDayIndex].assignedWeekDay}`,
       duration: 2000,
     });
   };
@@ -539,7 +544,33 @@ const MultiDayPlanner = ({ customers, homeBase, onUpdateCustomers, onDayPlansCha
             >
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">{dayPlan.dayName}</CardTitle>
+                  <div className="space-y-1">
+                    <CardTitle className="text-lg">{dayPlan.dayName}</CardTitle>
+                    <Select 
+                      value={dayPlan.assignedWeekDay} 
+                      onValueChange={(value) => {
+                        const newAssignments = { ...dayAssignments, [dayPlan.day]: value };
+                        setDayAssignments(newAssignments);
+                        const updatedPlans = dayPlans.map(plan => 
+                          plan.day === dayPlan.day 
+                            ? { ...plan, assignedWeekDay: value }
+                            : plan
+                        );
+                        setDayPlans(updatedPlans);
+                        onDayPlansChange(updatedPlans);
+                      }}
+                    >
+                      <SelectTrigger className="w-28 h-7 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {weekDays.map(day => (
+                          <SelectItem key={day} value={day} className="text-xs">{day}</SelectItem>
+                        ))}
+                        <SelectItem value={`Day ${dayPlan.day}`} className="text-xs">Day {dayPlan.day}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <Button
                     variant="outline"
                     size="sm"
