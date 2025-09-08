@@ -54,6 +54,68 @@ const parseAddress = (address: string) => {
   return { houseNumber, streetName };
 };
 
+// Create geographic groups for customers with the same street name
+const createGeographicGroups = (streetCustomers: Point[], streetName: string): Point[][] => {
+  if (streetCustomers.length <= 1) return [streetCustomers];
+  
+  // Calculate distances between all customers on this street
+  const maxGroupDistance = 2.0; // Maximum 2 miles between customers in same group
+  const groups: Point[][] = [];
+  const processed = new Set<string>();
+  
+  streetCustomers.forEach(customer => {
+    if (processed.has(customer.id)) return;
+    
+    // Start a new group with this customer
+    const currentGroup = [customer];
+    processed.add(customer.id);
+    
+    // Find all other unprocessed customers within range
+    streetCustomers.forEach(otherCustomer => {
+      if (processed.has(otherCustomer.id)) return;
+      
+      const distance = calculateDistance(
+        customer.lat, customer.lng,
+        otherCustomer.lat, otherCustomer.lng
+      );
+      
+      if (distance <= maxGroupDistance) {
+        currentGroup.push(otherCustomer);
+        processed.add(otherCustomer.id);
+      }
+    });
+    
+    if (currentGroup.length > 1) {
+      // Log geographic separation detection
+      const distances = currentGroup.map(c1 => 
+        currentGroup.map(c2 => 
+          c1.id !== c2.id ? calculateDistance(c1.lat, c1.lng, c2.lat, c2.lng) : 0
+        ).filter(d => d > 0)
+      ).flat();
+      
+      const maxDist = Math.max(...distances);
+      const avgDist = distances.reduce((sum, d) => sum + d, 0) / distances.length;
+      
+      console.log(`   ✅ Geographic group on "${streetName}": ${currentGroup.length} customers, max distance: ${maxDist.toFixed(2)} mi, avg: ${avgDist.toFixed(2)} mi`);
+    } else {
+      console.log(`   📍 Isolated customer on "${streetName}": ${customer.data.name} (no nearby customers)`);
+    }
+    
+    groups.push(currentGroup);
+  });
+  
+  // Check for potential outliers (same street name but far apart)
+  if (groups.length > 1) {
+    console.warn(`   ⚠️  GEOGRAPHIC SEPARATION DETECTED: "${streetName}" has ${groups.length} separate geographic clusters`);
+    groups.forEach((group, index) => {
+      const addresses = group.map(c => `${c.data.name} (${c.data.address})`).join(', ');
+      console.warn(`      Cluster ${index + 1}: ${addresses}`);
+    });
+  }
+  
+  return groups;
+};
+
 // Identify customers on the same street who could be serviced in one stop
 const identifyStreetGroups = (points: Point[]): HouseGroup[] => {
   const streetMap = new Map<string, Point[]>();
@@ -86,7 +148,7 @@ const identifyStreetGroups = (points: Point[]): HouseGroup[] => {
     });
   });
   
-  // For each street, create walking groups
+  // For each street, create walking groups with geographic validation
   streetMap.forEach((streetCustomers, streetName) => {
     if (streetCustomers.length === 1) {
       // Single customer on this street
@@ -97,57 +159,65 @@ const identifyStreetGroups = (points: Point[]): HouseGroup[] => {
         centroid: { lat: customer.lat, lng: customer.lng }
       });
     } else {
-      // Multiple customers on same street - sort by house number
-      const sorted = streetCustomers
-        .map(customer => ({
-          customer,
-          parsed: parseAddress(customer.data.address)
-        }))
-        .filter(item => item.parsed)
-        .sort((a, b) => a.parsed!.houseNumber - b.parsed!.houseNumber);
+      // Multiple customers on same street - validate they're geographically close
+      console.log(`\n🏠 Processing ${streetCustomers.length} customers on "${streetName}"`);
       
-      // Group nearby house numbers (within ~10 house numbers, accounting for odd/even)
-      let currentGroup: Point[] = [];
-      let lastHouseNumber = -1;
+      // First, check if all customers are actually close together (within 2 miles)
+      const geographicGroups = createGeographicGroups(streetCustomers, streetName);
       
-      sorted.forEach(({ customer, parsed }) => {
-        const houseNumber = parsed!.houseNumber;
+      // Process each geographic group separately
+      geographicGroups.forEach(geoGroup => {
+        const sorted = geoGroup
+          .map(customer => ({
+            customer,
+            parsed: parseAddress(customer.data.address)
+          }))
+          .filter(item => item.parsed)
+          .sort((a, b) => a.parsed!.houseNumber - b.parsed!.houseNumber);
         
-        if (currentGroup.length === 0 || 
-            Math.abs(houseNumber - lastHouseNumber) <= 10) {
-          // Add to current group
-          currentGroup.push(customer);
-          lastHouseNumber = houseNumber;
-        } else {
-          // Start new group
-          if (currentGroup.length > 0) {
-            const centroid = {
-              lat: currentGroup.reduce((sum, p) => sum + p.lat, 0) / currentGroup.length,
-              lng: currentGroup.reduce((sum, p) => sum + p.lng, 0) / currentGroup.length
-            };
-            groups.push({
-              id: `group-${groups.length}`,
-              customers: currentGroup,
-              centroid
-            });
+        // Group nearby house numbers (within ~10 house numbers, accounting for odd/even)
+        let currentGroup: Point[] = [];
+        let lastHouseNumber = -1;
+        
+        sorted.forEach(({ customer, parsed }) => {
+          const houseNumber = parsed!.houseNumber;
+          
+          if (currentGroup.length === 0 || 
+              Math.abs(houseNumber - lastHouseNumber) <= 10) {
+            // Add to current group
+            currentGroup.push(customer);
+            lastHouseNumber = houseNumber;
+          } else {
+            // Start new group
+            if (currentGroup.length > 0) {
+              const centroid = {
+                lat: currentGroup.reduce((sum, p) => sum + p.lat, 0) / currentGroup.length,
+                lng: currentGroup.reduce((sum, p) => sum + p.lng, 0) / currentGroup.length
+              };
+              groups.push({
+                id: `group-${groups.length}`,
+                customers: currentGroup,
+                centroid
+              });
+            }
+            currentGroup = [customer];
+            lastHouseNumber = houseNumber;
           }
-          currentGroup = [customer];
-          lastHouseNumber = houseNumber;
+        });
+        
+        // Add final group
+        if (currentGroup.length > 0) {
+          const centroid = {
+            lat: currentGroup.reduce((sum, p) => sum + p.lat, 0) / currentGroup.length,
+            lng: currentGroup.reduce((sum, p) => sum + p.lng, 0) / currentGroup.length
+          };
+          groups.push({
+            id: `group-${groups.length}`,
+            customers: currentGroup,
+            centroid
+          });
         }
       });
-      
-      // Add final group
-      if (currentGroup.length > 0) {
-        const centroid = {
-          lat: currentGroup.reduce((sum, p) => sum + p.lat, 0) / currentGroup.length,
-          lng: currentGroup.reduce((sum, p) => sum + p.lng, 0) / currentGroup.length
-        };
-        groups.push({
-          id: `group-${groups.length}`,
-          customers: currentGroup,
-          centroid
-        });
-      }
     }
   });
   
@@ -404,8 +474,6 @@ const performKMeansClustering = (points: Point[], numDays: number, homeBase?: { 
       break;
     }
   } while (true);
-
-  return clusters;
 
   return clusters;
 };
